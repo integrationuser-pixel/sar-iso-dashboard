@@ -4,6 +4,9 @@
 //   POST /api/mongo  { dataset: "sales" } -> sales lines for the dashboard (signed in)
 //   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in)
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
+//   POST /api/mongo  { dataset: "users" }                 -> users with access     (admins)
+//   POST /api/mongo  { action: "saveUser", email, role, disabled, create } -> users  (admins)
+//   POST /api/mongo  { action: "deleteUser", email }       -> users                 (admins)
 //
 // Every POST needs "Authorization: Bearer <Google ID token>" from Google sign-in.
 // Environment: MONGODB_URI, MONGODB_DB, ADMIN_EMAILS, ALLOWED_DOMAINS (GOOGLE_CLIENT_ID optional).
@@ -29,7 +32,7 @@ export async function getDb() {
 }
 
 export class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, code) { super(message); this.status = status; this.code = code; }
 }
 
 // ---------------------------------------------------------------- sign-in
@@ -74,7 +77,7 @@ export async function authenticate(req) {
   if (!h.startsWith("Bearer ")) throw new HttpError(401, "Not signed in");
   const user = await verifyGoogleToken(h.slice(7));
   const role = await roleFor(user.email);
-  if (!role) throw new HttpError(403, `${user.email} does not have access to this dashboard`);
+  if (!role) throw new HttpError(403, `${user.email} does not have access to this dashboard`, "no_access");
   return { ...user, role };
 }
 
@@ -189,6 +192,63 @@ async function salesDataset() {
   return data;
 }
 
+// ---------------------------------------------------------------- user management (admins)
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ROLES = ["admin", "viewer"];
+
+function requireAdmin(user) {
+  if (user.role !== "admin") throw new HttpError(403, "Only admins can manage users", "admin_only");
+}
+
+async function listUsers() {
+  const db = await getDb();
+  const docs = await db.collection("dashboardUsers")
+    .find({}, { projection: { _id: 0, email: 1, role: 1, disabled: 1, addedAt: 1, addedBy: 1, updatedAt: 1, updatedBy: 1 } })
+    .sort({ email: 1 }).toArray();
+  const users = docs.map((d) => ({ ...d, role: d.role === "admin" ? "admin" : "viewer", disabled: !!d.disabled }));
+  for (const e of list(process.env.ADMIN_EMAILS)) {   // env admins can't be edited here
+    const u = users.find((x) => x.email === e);
+    if (u) Object.assign(u, { role: "admin", locked: true }); else users.push({ email: e, role: "admin", disabled: false, locked: true });
+  }
+  return users;
+}
+
+async function saveUser(body, user) {
+  requireAdmin(user);
+  const email = String(body.email || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) throw new HttpError(400, "Enter a valid email address");
+  const role = body.role ?? "viewer";
+  if (!ROLES.includes(role)) throw new HttpError(400, "Role must be admin or viewer");
+  const disabled = !!body.disabled;
+  if (email === user.email && (role !== "admin" || disabled)) throw new HttpError(400, "You can't remove your own admin access");
+  if (list(process.env.ADMIN_EMAILS).includes(email)) throw new HttpError(400, `${email} is set in ADMIN_EMAILS and can only be changed in Vercel`);
+
+  const db = await getDb();
+  const users = db.collection("dashboardUsers");
+  if (body.create && await users.findOne({ email }, { projection: { _id: 1 } })) {
+    throw new HttpError(409, `${email} already has access`);
+  }
+  const now = new Date();
+  await users.updateOne(
+    { email },
+    { $set: { role, disabled, updatedAt: now, updatedBy: user.email }, $setOnInsert: { email, addedAt: now, addedBy: user.email } },
+    { upsert: true },
+  );
+  return listUsers();
+}
+
+async function deleteUser(body, user) {
+  requireAdmin(user);
+  const email = String(body.email || "").trim().toLowerCase();
+  if (email === user.email) throw new HttpError(400, "You can't remove yourself");
+  if (list(process.env.ADMIN_EMAILS).includes(email)) throw new HttpError(400, `${email} is set in ADMIN_EMAILS and can only be changed in Vercel`);
+  const db = await getDb();
+  const { deletedCount } = await db.collection("dashboardUsers").deleteOne({ email });
+  if (!deletedCount) throw new HttpError(404, `${email} was not found`);
+  return listUsers();
+}
+
 // ---------------------------------------------------------------- request handling
 
 /** Runs one request ({ dataset } or { collection, pipeline }) for a signed-in user. */
@@ -196,6 +256,10 @@ export async function runRequest(body, user) {
   if (!body || typeof body !== "object") throw new HttpError(400, "Request body must be JSON");
   if (body.dataset === "sales") return salesDataset();
   if (body.dataset === "me") return user;
+  if (body.dataset === "users") { requireAdmin(user); return listUsers(); }
+  if (body.action === "saveUser") return saveUser(body, user);
+  if (body.action === "deleteUser") return deleteUser(body, user);
+  if (body.action) throw new HttpError(400, `Unknown action ${body.action}`);
   if (body.dataset) throw new HttpError(400, `Unknown dataset ${body.dataset}`);
   return aggregate(body.collection, body.pipeline);
 }
@@ -208,7 +272,7 @@ export function parseBody(req) {
 export function sendError(res, e) {
   const status = e instanceof HttpError ? e.status : 500;
   if (status === 500) console.error(e);
-  res.status(status).json({ error: status === 500 && !(e instanceof HttpError) ? "Server error" : e.message });
+  res.status(status).json({ error: status === 500 && !(e instanceof HttpError) ? "Server error" : e.message, code: e.code });
 }
 
 export default async function handler(req, res) {

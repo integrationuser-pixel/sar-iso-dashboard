@@ -126,6 +126,24 @@
   .pill.cn { background: #fef2f2; color: #b91c1c; } .pill.dn { background: #fffbeb; color: #b45309; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 
+  /* billing details pivot (mirrors the weekly-call sheet) */
+  .pivot { font-size: 12.5px; }
+  .pivot th { background: #e8eefb; color: #1e3a8a; text-transform: none; font-size: 12px; font-weight: 600; border-bottom: 1px solid #c7d4f5; }
+  .pivot thead tr:first-child th { top: 0; } .pivot thead tr:nth-child(2) th { top: 31px; }
+  .pivot th.dim { text-align: left; white-space: nowrap; }
+  .pivot td.dim { text-align: left; position: static; white-space: nowrap; }
+  .pivot td.dim { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+  .pivot th.mtot, .pivot td.mtot { background: #f1f5fd; }
+  .pivot th.gt, .pivot td.gt { background: #e8eefb; font-weight: 700; }
+  .pivot tr.lv0 td { font-weight: 600; } .pivot tr.lv0 { background: #fafbff; }
+  .pivot tr.lv0:not(:first-child) td { border-top: 1px solid #dbe3f5; }
+  .pivot tfoot td { background: #e8eefb; font-weight: 700; }
+  .tg { width: 16px; height: 16px; padding: 0; margin-right: 6px; border: 1px solid #93a8d8; border-radius: 3px; background: #fff;
+        color: #1e3a8a; font: 600 12px/14px ui-monospace, monospace; vertical-align: -2px; }
+  .tg:hover { background: #e8eefb; }
+  .tg-sp { display: inline-block; width: 22px; }
+  .blank { color: #94a3b8; font-style: italic; }
+
   /* admin panel */
   .admin-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
   .add-user { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
@@ -232,9 +250,10 @@
   </div>
 
   <section class="card panel">
-    <h2 id="detailTitle">Agent Detail</h2><p class="sub" id="detailSub"></p>
+    <h2 id="detailTitle">Billing Details</h2><p class="sub" id="detailSub"></p>
     <div class="tools">
-      <div class="seg" id="detailTabs"><button data-t="agent">Agent Detail</button><button data-t="lane">Trade Lane Detail</button></div>
+      <div class="seg" id="detailTabs"><button data-t="billing">Billing Details</button><button data-t="agent">Agent Detail</button><button data-t="lane">Trade Lane Detail</button></div>
+      <span id="pivotTools"><button class="btn" id="pivotExpand">Expand all</button> <button class="btn" id="pivotCollapse">Collapse all</button></span>
       <input class="search" id="detailSearch" placeholder="Search…">
       <span class="foot" id="detailCount"></span>
     </div>
@@ -373,7 +392,9 @@ function trendTable(lines, key, buckets, g) {
   return { rows: [...m.values()].sort((a, b) => b.total - a.total), totals };
 }
 const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || l.category === f.category)
-  && (!f.agent || l.agent === f.agent) && (!f.lane || l.lane === f.lane);
+  && (f.agent === undefined || l.agent === f.agent) && (!f.lane || l.lane === f.lane)
+  && (f.charge === undefined || l.charge === f.charge) && (f.shipper === undefined || l.shipper === f.shipper)
+  && (f.pol === undefined || l.pol === f.pol) && (f.pod === undefined || l.pod === f.pod);
 
 // ============================================================ state
 const VIEWS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"], ["custom", "Custom Range"]];
@@ -381,7 +402,7 @@ const t12 = trailing12();
 const state = {
   lines: [], lastSync: null, view: "custom", periodKey: "", from: t12.from, to: t12.to,
   currency: store.get("sar.currency", "USD"), rate: store.get("sar.inrRate", 88),
-  detail: "agent", detailQ: "", detailAll: false, drill: null, drillQ: "", drillLimit: 200,
+  detail: "billing", detailQ: "", detailAll: false, pivotOpen: new Set(), monthsOpen: new Set(), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
 
@@ -628,6 +649,9 @@ function renderTrend(lines) {
 const bucketSpan = (b) => { const e = bucketEnd(b, g()); return { from: b < state.from ? state.from : b, to: e > state.to ? state.to : e }; };
 
 function renderTable() {
+  const billing = state.detail === "billing";
+  $("pivotTools").classList.toggle("hidden", !billing);
+  if (billing) return renderPivot();
   const gr = g(), buckets = bucketRange(state.from, state.to, gr), isAgent = state.detail === "agent";
   const dim = isAgent ? "Agent" : "Trade Lane";
   const { rows, totals } = trendTable(inPeriod(), isAgent ? (l) => l.agent : (l) => l.lane, buckets, gr);
@@ -640,6 +664,7 @@ function renderTable() {
   $("detailSearch").placeholder = `Search ${dim.toLowerCase()}…`;
   $("detailCount").textContent = `${filtered.length} ${dim.toLowerCase()}s`;
   const cell = (v, name, b) => `<td>${v ? `<button class="num${v < 0 ? " neg" : ""}" data-n="${esc(name ?? "")}" data-b="${b ?? ""}">${money(v)}</button>` : '<span class="dash">–</span>'}</td>`;
+  $("detailTable").className = "";
   $("detailTable").innerHTML =
     `<thead><tr><th>${dim}</th>${buckets.map((b) => `<th>${bucketLabel(b, gr)}</th>`).join("")}<th>Total</th></tr></thead>
      <tbody>${shown.map((r) => `<tr><td class="name" title="${esc(r.name)}">${esc(r.name)}</td>${buckets.map((b) => cell(r.cells[b], r.name, b)).join("")}${cell(r.total, r.name, "")}</tr>`).join("")}</tbody>
@@ -648,11 +673,133 @@ function renderTable() {
   $("detailMore").textContent = state.detailAll ? "Show top 15" : `Show all ${filtered.length}`;
 }
 $("detailTable").onclick = (e) => {
+  if (state.detail === "billing") return pivotClick(e);
   const b = e.target.closest("button.num"); if (!b) return;
   const name = b.dataset.n || null, bucket = b.dataset.b || null, isAgent = state.detail === "agent";
   const what = name ?? (isAgent ? "All agents" : "All lanes");
   openDrill({ title: what + (bucket ? ` — ${bucketLabel(bucket, g())}` : ""), ...(name ? (isAgent ? { agent: name } : { lane: name }) : {}), ...(bucket ? bucketSpan(bucket) : {}) });
 };
+
+// ============================================================ billing details pivot
+// Rows: Charge → Shipper → Party → POL → POD. Columns: month (expandable to WEEKNUM weeks) + grand total.
+const PIVOT_LEVELS = [["charge", "Charge Name"], ["shipper", "Shipper Name"], ["agent", "Party Name"], ["pol", "POL"], ["pod", "POD"]];
+function weekNum(s) {   // Google Sheets WEEKNUM (weeks start Sunday, week 1 contains 1 Jan)
+  const d = toDate(s), jan1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.floor((Math.round((d - jan1) / 864e5) + jan1.getUTCDay()) / 7) + 1;
+}
+const monthLabel = (m) => `${MONTHS[+m.slice(5, 7) - 1]}-${m.slice(2, 4)}`;
+let pivotRows = [], pivotCols = [];
+
+function buildPivot(lines) {
+  const root = { children: new Map(), cells: {}, total: 0 }, weeks = new Map();
+  for (const l of lines) {
+    const m = l.date.slice(0, 7), w = `${m}|${weekNum(l.date)}`;
+    if (!weeks.has(m)) weeks.set(m, new Set());
+    weeks.get(m).add(w);
+    let node = root, path = "";
+    const add = (n) => { n.cells[m] = (n.cells[m] || 0) + l.amount; n.cells[w] = (n.cells[w] || 0) + l.amount; n.total += l.amount; };
+    add(root);
+    PIVOT_LEVELS.forEach(([key], i) => {
+      const v = l[key] ?? "";
+      path += "\u0001" + v;
+      let c = node.children.get(v);
+      if (!c) node.children.set(v, c = { name: v, level: i, path, filter: { ...node.filter, [key]: v }, children: new Map(), cells: {}, total: 0 });
+      node = c; add(node);
+    });
+  }
+  const months = [...weeks.keys()].sort().map((m) => ({ m, weeks: [...weeks.get(m)].sort((a, b) => +a.split("|")[1] - +b.split("|")[1]) }));
+  return { root, months };
+}
+
+function renderPivot() {
+  const q = state.detailQ.toLowerCase();
+  const lines = inPeriod().filter((l) => !q || [l.charge, l.shipper, l.agent, l.pol, l.pod].some((v) => (v || "").toLowerCase().includes(q)));
+  const { root, months } = buildPivot(lines);
+
+  $("detailTitle").textContent = "Billing Details";
+  $("detailSub").textContent = "Sum of amount by Charge → Shipper → Party → POL → POD. Use + to expand rows or months; click any number for the invoices.";
+  $("detailSearch").placeholder = "Search charge, shipper, party, port…";
+  $("detailCount").textContent = `${root.children.size} charges · ${lines.length.toLocaleString("en-IN")} lines`;
+  $("detailMore").classList.add("hidden");
+
+  // columns
+  pivotCols = [];
+  for (const { m, weeks } of months) {
+    if (state.monthsOpen.has(m)) for (const w of weeks) pivotCols.push({ key: w, m, week: +w.split("|")[1] });
+    pivotCols.push({ key: m, m, monthTotal: true });
+  }
+  pivotCols.push({ key: "__total", grand: true });
+
+  // rows (depth-first; children shown when their parent is open)
+  pivotRows = [];
+  const sorted = (n) => [...n.children.values()].sort((a, b) => b.total - a.total);
+  const walk = (n) => { for (const c of sorted(n)) { pivotRows.push(c); if (state.pivotOpen.has(c.path) && c.level < PIVOT_LEVELS.length - 1) walk(c); } };
+  walk(root);
+  const nDims = Math.max(1, ...pivotRows.map((n) => n.level + 1));   // only levels that are expanded somewhere
+  const dims = PIVOT_LEVELS.slice(0, nDims);
+
+  const DIM_W = [240, 220, 220, 110, 110];
+  let head1 = dims.map(([, label], i) => `<th class="dim" rowspan="2" style="min-width:${DIM_W[i]}px">${label}</th>`).join("");
+  let head2 = "";
+  for (const { m, weeks } of months) {
+    const open = state.monthsOpen.has(m);
+    const tg = `<button class="tg" data-month="${m}" aria-label="${open ? "Collapse" : "Expand"} ${monthLabel(m)}">${open ? "−" : "+"}</button>`;
+    if (open) {
+      head1 += `<th colspan="${weeks.length + 1}" style="text-align:left">${tg}${monthLabel(m)}</th>`;
+      head2 += weeks.map((w) => `<th>Week ${w.split("|")[1]}</th>`).join("") + `<th class="mtot">${monthLabel(m)} Total</th>`;
+    } else {
+      head1 += `<th class="mtot" rowspan="2">${tg}${monthLabel(m)} Total</th>`;
+    }
+  }
+  head1 += `<th class="gt" rowspan="2">Grand Total</th>`;
+
+  const val = (v, i, ci) => {
+    const col = pivotCols[ci], cls = col.grand ? "gt" : col.monthTotal ? "mtot" : "";
+    return `<td class="${cls}">${v ? `<button class="num${v < 0 ? " neg" : ""}" data-r="${i}" data-c="${ci}">${money(v)}</button>` : ""}</td>`;
+  };
+  const body = pivotRows.map((n, i) => {
+    const leaf = n.level === PIVOT_LEVELS.length - 1, open = state.pivotOpen.has(n.path);
+    const label = n.name ? esc(n.name) : '<span class="blank">(blank)</span>';
+    const tg = leaf ? "" : `<button class="tg" data-row="${i}" aria-label="${open ? "Collapse" : "Expand"}">${open ? "−" : "+"}</button>`;
+    const cells = dims.map((_, li) => (li === n.level
+      ? `<td class="dim" title="${esc(n.name)}">${tg}${label}${leaf || open ? "" : " Total"}</td>` : '<td class="dim"></td>')).join("");
+    return `<tr class="lv${n.level}">${cells}${pivotCols.map((c, ci) => val(c.grand ? n.total : n.cells[c.key], i, ci)).join("")}</tr>`;
+  }).join("");
+  pivotRows.push(root);
+  const foot = `<tr><td class="dim" colspan="${nDims}">Grand Total</td>${pivotCols.map((c, ci) => val(c.grand ? root.total : root.cells[c.key], pivotRows.length - 1, ci)).join("")}</tr>`;
+
+  $("detailTable").className = "pivot";
+  $("detailTable").innerHTML = `<thead><tr>${head1}</tr>${head2 ? `<tr>${head2}</tr>` : ""}</thead><tbody>${body || `<tr><td colspan="${nDims + pivotCols.length}" style="text-align:center;padding:24px;color:#94a3b8">No billing in this period</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
+}
+
+function pivotColRange(col) {
+  if (col.grand) return { from: state.from, to: state.to };
+  const [y, mo] = col.m.split("-").map(Number);
+  let from = `${col.m}-01`, to = lastOfMonth(y, mo - 1);
+  if (col.week) {   // days of this month that fall in this WEEKNUM
+    const days = []; for (let d = from; d <= to; d = addDays(d, 1)) if (weekNum(d) === col.week) days.push(d);
+    from = days[0]; to = days[days.length - 1];
+  }
+  return { from: from < state.from ? state.from : from, to: to > state.to ? state.to : to };
+}
+function pivotClick(e) {
+  const t = e.target.closest("button"); if (!t) return true;
+  if (t.dataset.month) { const m = t.dataset.month; state.monthsOpen.has(m) ? state.monthsOpen.delete(m) : state.monthsOpen.add(m); renderPivot(); return false; }
+  if (t.dataset.row) { const p = pivotRows[+t.dataset.row].path; state.pivotOpen.has(p) ? state.pivotOpen.delete(p) : state.pivotOpen.add(p); renderPivot(); return false; }
+  if (t.dataset.r) {
+    const n = pivotRows[+t.dataset.r], col = pivotCols[+t.dataset.c];
+    const name = n.filter ? PIVOT_LEVELS.slice(0, n.level + 1).map(([k]) => n.filter[k] || "(blank)").join(" › ") : "All charges";
+    const when = col.grand ? "" : ` — ${col.week ? `Week ${col.week}, ` : ""}${monthLabel(col.m)}`;
+    openDrill({ title: name + when, ...(n.filter || {}), ...pivotColRange(col) });
+    return false;
+  }
+  return true;
+}
+$("pivotExpand").onclick = () => {
+  const all = (n) => { for (const c of n.children.values()) { if (c.level < PIVOT_LEVELS.length - 1) { state.pivotOpen.add(c.path); all(c); } } };
+  all(buildPivot(inPeriod()).root); renderPivot();
+};
+$("pivotCollapse").onclick = () => { state.pivotOpen.clear(); state.monthsOpen.clear(); renderPivot(); };
 
 // ============================================================ drill-down modal
 function openDrill(f) {

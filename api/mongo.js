@@ -5,7 +5,8 @@
 //   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in)
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
 //   POST /api/mongo  { dataset: "users" }                 -> users with access     (admins)
-//   POST /api/mongo  { action: "saveUser", email, role, disabled, create } -> users  (admins)
+//   POST /api/mongo  { action: "saveUser", email, name, role, disabled, create } -> users  (admins)
+//   POST /api/mongo  { action: "bulkSaveUsers", users: [{ email, name, role }] } -> { users, added, updated, unchanged, skipped }  (admins)
 //   POST /api/mongo  { action: "deleteUser", email }       -> users                 (admins)
 //
 // Every POST needs "Authorization: Bearer <Google ID token>" from Google sign-in.
@@ -206,7 +207,7 @@ function requireAdmin(user) {
 async function listUsers() {
   const db = await getDb();
   const docs = await db.collection("dashboardUsers")
-    .find({}, { projection: { _id: 0, email: 1, role: 1, disabled: 1, addedAt: 1, addedBy: 1, updatedAt: 1, updatedBy: 1 } })
+    .find({}, { projection: { _id: 0, email: 1, name: 1, role: 1, disabled: 1, addedAt: 1, addedBy: 1, updatedAt: 1, updatedBy: 1 } })
     .sort({ email: 1 }).toArray();
   const users = docs.map((d) => ({ ...d, role: d.role === "admin" ? "admin" : "viewer", disabled: !!d.disabled }));
   for (const e of list(process.env.ADMIN_EMAILS)) {   // env admins can't be edited here
@@ -223,6 +224,7 @@ async function saveUser(body, user) {
   const role = body.role ?? "viewer";
   if (!ROLES.includes(role)) throw new HttpError(400, "Role must be admin or viewer");
   const disabled = !!body.disabled;
+  const name = body.name === undefined ? undefined : String(body.name).trim().slice(0, 100);
   if (email === user.email && (role !== "admin" || disabled)) throw new HttpError(400, "You can't remove your own admin access");
   if (list(process.env.ADMIN_EMAILS).includes(email)) throw new HttpError(400, `${email} is set in ADMIN_EMAILS and can only be changed in Vercel`);
 
@@ -234,10 +236,47 @@ async function saveUser(body, user) {
   const now = new Date();
   await users.updateOne(
     { email },
-    { $set: { role, disabled, updatedAt: now, updatedBy: user.email }, $setOnInsert: { email, addedAt: now, addedBy: user.email } },
+    { $set: { role, disabled, ...(name !== undefined && { name }), updatedAt: now, updatedBy: user.email },
+      $setOnInsert: { email, addedAt: now, addedBy: user.email } },
     { upsert: true },
   );
   return listUsers();
+}
+
+/** Import: add new users and update name/role of existing ones. Rows that would lock you out are skipped. */
+async function bulkSaveUsers(body, user) {
+  requireAdmin(user);
+  const rows = Array.isArray(body.users) ? body.users : [];
+  if (!rows.length) throw new HttpError(400, "No users to import");
+  if (rows.length > 1000) throw new HttpError(400, "At most 1000 users per import");
+  const db = await getDb();
+  const users = db.collection("dashboardUsers");
+  const envAdmins = list(process.env.ADMIN_EMAILS);
+  const existing = new Map((await users.find({}, { projection: { _id: 0, email: 1, name: 1, role: 1 } }).toArray()).map((u) => [u.email, u]));
+  const result = { added: 0, updated: 0, unchanged: 0, skipped: [] };
+  const now = new Date(), seen = new Set();
+  for (const r of rows) {
+    const email = String(r?.email || "").trim().toLowerCase();
+    const name = String(r?.name || "").trim().slice(0, 100);
+    const role = String(r?.role || "").trim().toLowerCase();
+    const skip = (reason) => result.skipped.push({ email: email || String(r?.email || ""), reason });
+    if (!EMAIL_RE.test(email)) { skip("Invalid email"); continue; }
+    if (!ROLES.includes(role)) { skip(`Unknown role "${r?.role ?? ""}"`); continue; }
+    if (seen.has(email)) { skip("Duplicate in file"); continue; }
+    seen.add(email);
+    if (envAdmins.includes(email)) { skip("Set in ADMIN_EMAILS"); continue; }
+    if (email === user.email && role !== "admin") { skip("Can't remove your own admin access"); continue; }
+    const cur = existing.get(email);
+    if (cur && (cur.role === "admin" ? "admin" : "viewer") === role && (!name || cur.name === name)) { result.unchanged++; continue; }
+    await users.updateOne(
+      { email },
+      { $set: { role, ...(name && { name }), updatedAt: now, updatedBy: user.email },
+        $setOnInsert: { email, disabled: false, addedAt: now, addedBy: user.email } },
+      { upsert: true },
+    );
+    cur ? result.updated++ : result.added++;
+  }
+  return { ...result, users: await listUsers() };
 }
 
 async function deleteUser(body, user) {
@@ -261,6 +300,7 @@ export async function runRequest(body, user) {
   if (body.dataset === "users") { requireAdmin(user); return listUsers(); }
   if (body.action === "saveUser") return saveUser(body, user);
   if (body.action === "deleteUser") return deleteUser(body, user);
+  if (body.action === "bulkSaveUsers") return bulkSaveUsers(body, user);
   if (body.action) throw new HttpError(400, `Unknown action ${body.action}`);
   if (body.dataset) throw new HttpError(400, `Unknown dataset ${body.dataset}`);
   return aggregate(body.collection, body.pipeline);

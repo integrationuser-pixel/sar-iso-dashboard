@@ -233,6 +233,8 @@
   <div class="card filters">
     <div class="seg" id="views" aria-label="Report view"></div>
     <label class="f hidden" id="periodWrap">Period <select id="period"></select></label>
+    <label class="f hidden" id="monthFromWrap">From month <select id="monthFrom"></select></label>
+    <label class="f hidden" id="monthToWrap">To month <select id="monthTo"></select></label>
     <label class="f" id="fromWrap">From <input type="date" id="from"></label>
     <label class="f" id="toWrap">To <input type="date" id="to"></label>
     <div class="push">
@@ -326,7 +328,6 @@ const lastOfMonth = (y, m) => iso(new Date(Date.UTC(y, m + 1, 0)));
 const yy = (y) => String(y).slice(2);
 const mondayOf = (s) => addDays(s, -((toDate(s).getUTCDay() + 6) % 7));
 const shortDate = (s) => { const d = toDate(s); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${yy(d.getUTCFullYear())}`; };
-function trailing12() { const t = iso(new Date()); const d = toDate(t); return { from: iso(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 11, 1))), to: t }; }
 
 function periodOptions(view, dates) {
   const map = new Map();
@@ -344,7 +345,7 @@ function periodOptions(view, dates) {
 }
 function granularity(view, from, to) {
   if (view === "weekly") return "day";
-  if (view === "monthly") return "week";
+  if (view === "monthly") return from.slice(0, 7) === to.slice(0, 7) ? "week" : "month";
   if (view === "quarterly" || view === "yearly") return "month";
   const days = (toDate(to) - toDate(from)) / 864e5;
   return days > 62 ? "month" : days > 14 ? "week" : "day";
@@ -404,9 +405,13 @@ const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || 
 
 // ============================================================ state
 const VIEWS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"], ["custom", "Custom Range"]];
-const t12 = trailing12();
+// Default: Monthly view from April 2026 to the end of the current month.
+const DEFAULT_FROM_MONTH = "2026-04";
+const thisMonth = () => iso(new Date()).slice(0, 7);
+const monthEnd = (m) => lastOfMonth(+m.slice(0, 4), +m.slice(5, 7) - 1);
 const state = {
-  lines: [], lastSync: null, view: "custom", periodKey: "", from: t12.from, to: t12.to,
+  lines: [], lastSync: null, view: "monthly", periodKey: "",
+  from: `${DEFAULT_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
   currency: store.get("sar.currency", "USD"), rate: store.get("sar.inrRate", 88),
   detail: "billing", detailQ: "", detailAll: false, pivotOpen: new Set(), monthsOpen: new Set(), drill: null, drillQ: "", drillLimit: 200,
 };
@@ -534,12 +539,23 @@ $("views").innerHTML = VIEWS.map(([v, l]) => `<button data-v="${v}">${l}</button
 $("views").onclick = (e) => {
   const v = e.target.closest("button")?.dataset.v; if (!v) return;
   state.view = v;
-  if (v !== "custom") { const o = periodOptions(v, state.lines.map((l) => l.date))[0]; if (o) Object.assign(state, { periodKey: o.key, from: o.from, to: o.to }); }
+  if (v === "monthly") Object.assign(state, { from: `${DEFAULT_FROM_MONTH}-01`, to: monthEnd(thisMonth()) });
+  else if (v !== "custom") { const o = periodOptions(v, state.lines.map((l) => l.date))[0]; if (o) Object.assign(state, { periodKey: o.key, from: o.from, to: o.to }); }
   render();
 };
 $("period").onchange = (e) => {
   const o = periodOptions(state.view, state.lines.map((l) => l.date)).find((x) => x.key === e.target.value);
   if (o) Object.assign(state, { periodKey: o.key, from: o.from, to: o.to }); render();
+};
+$("monthFrom").onchange = (e) => {
+  state.from = `${e.target.value}-01`;
+  if (state.to < state.from) state.to = monthEnd(e.target.value);
+  render();
+};
+$("monthTo").onchange = (e) => {
+  state.to = monthEnd(e.target.value);
+  if (state.from > state.to) state.from = `${e.target.value}-01`;
+  render();
 };
 $("from").onchange = (e) => { if (e.target.value) { state.from = e.target.value; render(); } };
 $("to").onchange = (e) => { if (e.target.value) { state.to = e.target.value; render(); } };
@@ -551,11 +567,18 @@ $("detailMore").onclick = () => { state.detailAll = !state.detailAll; renderTabl
 
 function renderFilters() {
   for (const b of $("views").children) b.setAttribute("aria-pressed", b.dataset.v === state.view);
-  const custom = state.view === "custom";
-  $("periodWrap").classList.toggle("hidden", custom);
+  const custom = state.view === "custom", monthly = state.view === "monthly";
+  $("periodWrap").classList.toggle("hidden", custom || monthly);
+  $("monthFromWrap").classList.toggle("hidden", !monthly); $("monthToWrap").classList.toggle("hidden", !monthly);
+  if (monthly) {
+    const first = state.lines.reduce((m, l) => (l.date < m ? l.date : m), `${DEFAULT_FROM_MONTH}-01`).slice(0, 7);
+    const months = []; for (let m = first; m <= thisMonth(); m = addDays(`${m}-28`, 7).slice(0, 7)) months.push(m);
+    const opts = (sel) => months.map((m) => `<option value="${m}"${m === sel ? " selected" : ""}>${MONTHS[+m.slice(5, 7) - 1]}-${m.slice(2, 4)}</option>`).join("");
+    $("monthFrom").innerHTML = opts(state.from.slice(0, 7)); $("monthTo").innerHTML = opts(state.to.slice(0, 7));
+  }
   $("fromWrap").classList.toggle("hidden", !custom); $("toWrap").classList.toggle("hidden", !custom);
   $("from").value = state.from; $("to").value = state.to; $("from").max = state.to; $("to").min = state.from;
-  if (!custom) {
+  if (!custom && !monthly) {
     $("period").innerHTML = periodOptions(state.view, state.lines.map((l) => l.date))
       .map((o) => `<option value="${esc(o.key)}"${o.key === state.periodKey ? " selected" : ""}>${esc(o.label)}</option>`).join("");
   }

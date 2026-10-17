@@ -2,6 +2,7 @@
 //
 //   GET  /api/mongo?config=1              -> { googleClientId }            (public)
 //   POST /api/mongo  { dataset: "sales" } -> sales lines for the dashboard (signed in)
+//   POST /api/mongo  { dataset: "mr" }    -> current tank inventory for M&R Operations (signed in)
 //   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in; login: true also records a sign-in)
 //   POST /api/mongo  { dataset: "usage" } -> sign-in stats per user + logins per day  (admins)
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
@@ -196,6 +197,106 @@ async function salesDataset() {
   return data;
 }
 
+// ---------------------------------------------------------------- M&R Operations dataset
+//
+// One row per tank in the fleet. The fleet is every tank with a container transaction (on hire /
+// sub-lease), which is the 1,028-tank list the old Current Inventory Report sheet used. Each tank's
+// status is its latest tblContainerMovement row (activityDate desc, then containerMovementId desc,
+// rows with a deletedNo left out). Principal is the company on the tank's latest On Hire
+// transaction; older transactions have no company and belong to SAR LOGISOLUTIONS PTE. LTD.
+// (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
+
+const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
+const MR_SNAPSHOT_ID = "mr-inventory-v1";
+
+/** Status bucket from the activity name (keyword rules from the requirements document). */
+function mrBucket(activity) {
+  const a = activity.toUpperCase();
+  if (a.includes("EMPTY")) return "Empty";
+  if (a.includes("LOADED")) return "Loaded Full";
+  if (a.includes("SENT TO CONSIGNEE")) return "Sent to Consignee";
+  if (a.includes("ON HIRE")) return "On Lease";              // SUB LEASE ON HIRE, ON HIRE (not SUB LEASE OFF HIRE)
+  if (a.includes("CLEAN") || a.includes("WASH")) return "Under Cleaning";
+  if (a.includes("REPAIR")) return "Under Repair";
+  if (a.includes("SURVEY")) return "Under Survey";
+  return "Other";
+}
+
+async function buildMr(db, lastSync) {
+  const [txns, latest] = await Promise.all([
+    db.collection("tblContainerTransaction").find({}, { projection: { _id: 0, containerTransactionNo: 1, containerTransactionId: 1,
+      containerTransactionDate: 1, pageTypeName: 1, companyName: 1, partyName: 1, detailContainerNo: 1 } }).toArray(),
+    db.collection("tblContainerMovement").aggregate([
+      { $match: { deletedNo: { $exists: false } } },
+      { $sort: { activityDate: -1, containerMovementId: -1 } },
+      { $group: { _id: "$containerNo", m: { $first: "$$ROOT" } } },
+      { $project: { _id: 0, c: "$_id", size: "$m.sizeName", type: "$m.typeName", activity: "$m.activityName", date: "$m.activityDate",
+                    agent: "$m.agentName", agentBranch: "$m.agentBranchName", from: "$m.fromLocationName", to: "$m.toLocationName",
+                    vessel: "$m.vesselName", voyage: "$m.voyageNo", jobNo: "$m.jobNo", importBl: "$m.importBlNo", exportBl: "$m.exportBlNo" } },
+    ], { allowDiskUse: true }).toArray(),
+  ]);
+
+  // company per transaction (it is only on some rows of a transaction), then the latest On Hire per tank
+  const company = new Map();
+  for (const t of txns) if (s(t.companyName) && !company.has(t.containerTransactionNo)) company.set(t.containerTransactionNo, s(t.companyName));
+  const byTank = new Map();
+  for (const t of txns) {
+    const c = s(t.detailContainerNo); if (!c) continue;
+    const key = [t.containerTransactionDate ? +new Date(t.containerTransactionDate) : 0, t.containerTransactionId || 0];
+    const cur = byTank.get(c) || { on: null, any: null };
+    const newer = (x) => !x || key[0] > x.key[0] || (key[0] === x.key[0] && key[1] > x.key[1]);
+    const entry = { key, company: company.get(t.containerTransactionNo) || "", party: s(t.partyName), page: s(t.pageTypeName) };
+    if (t.pageTypeName === "On Hire" && newer(cur.on)) cur.on = entry;
+    if (newer(cur.any)) cur.any = entry;
+    byTank.set(c, cur);
+  }
+
+  const move = new Map(latest.map((m) => [s(m.c), m]));
+  const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+  const tanks = [];
+  for (const [c, t] of byTank) {
+    const m = move.get(c) || {};
+    const activity = s(m.activity) || "(NO MOVEMENT)";
+    tanks.push({
+      c, size: s(m.size), type: s(m.type), activity, bucket: mrBucket(activity), date: day(m.date),
+      principal: t.on?.company || t.any?.company || DEFAULT_PRINCIPAL,
+      lessor: t.on?.party || "",
+      agent: s(m.agent) || "(Unknown)", agentBranch: s(m.agentBranch),
+      from: s(m.from), to: s(m.to), vessel: s(m.vessel), voyage: s(m.voyage),
+      jobNo: m.jobNo == null ? "" : String(m.jobNo).trim(), importBl: s(m.importBl), exportBl: s(m.exportBl),
+    });
+  }
+  tanks.sort((a, b) => a.c.localeCompare(b.c));
+  const dataTo = latest.reduce((mx, m) => (m.date && +new Date(m.date) > mx ? +new Date(m.date) : mx), 0);
+  return { tanks, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
+}
+
+async function mrDataset() {
+  if (g._sarMr && Date.now() - g._sarMr.at < TTL_MS) return g._sarMr.data;
+  const data = (async () => {
+    const db = await getDb();
+    const syncs = await Promise.all(["tblContainerMovement", "tblContainerTransaction"].map((table) =>
+      db.collection("sarfdSyncHistory").findOne(
+        { table, status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } },
+        { sort: { startedAt: -1 }, projection: { startedAt: 1 } })));
+    const times = syncs.map((x) => (x?.startedAt ? new Date(x.startedAt).toISOString() : null));
+    const lastSync = times.filter(Boolean).sort().pop() || null;
+    const key = createHash("sha1").update(`${MR_SNAPSHOT_ID}|${times.join("|")}`).digest("hex");
+
+    const cache = db.collection("dashboardCache");
+    const snap = await cache.findOne({ _id: MR_SNAPSHOT_ID });
+    if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
+
+    const payload = await buildMr(db, lastSync);
+    const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
+    await cache.replaceOne({ _id: MR_SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
+    return payload;
+  })();
+  g._sarMr = { at: Date.now(), data };
+  data.catch(() => { g._sarMr = undefined; });
+  return data;
+}
+
 // ---------------------------------------------------------------- user management (admins)
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -361,6 +462,7 @@ async function usageAnalytics(user) {
 export async function runRequest(body, user) {
   if (!body || typeof body !== "object") throw new HttpError(400, "Request body must be JSON");
   if (body.dataset === "sales") return salesDataset();
+  if (body.dataset === "mr") return mrDataset();
   if (body.dataset === "me") { if (body.login === true) await recordLogin(user).catch((e) => console.error(e)); return user; }
   if (body.dataset === "users") { requireAdmin(user); return listUsers(); }
   if (body.dataset === "usage") return usageAnalytics(user);

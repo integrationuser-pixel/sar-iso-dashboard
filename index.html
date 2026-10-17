@@ -126,6 +126,23 @@
   .pill.cn { background: #fef2f2; color: #b91c1c; } .pill.dn { background: #fffbeb; color: #b45309; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 
+  /* admin panel */
+  .admin-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .add-user { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+  .add-user input[type="email"] { width: 280px; }
+  .btn-add { height: 34px; border: 0; border-radius: 6px; padding: 0 16px; background: var(--blue); color: #fff; font-weight: 600; }
+  .btn-add:disabled { opacity: .6; }
+  .users td, .users th { text-align: left; }
+  .users td:first-child, .users th:first-child { position: static; }
+  .users select { height: 30px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0 6px; font: inherit; background: #fff; }
+  .status { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .status.on { background: #ecfdf5; color: #047857; } .status.off { background: #f1f5f9; color: #64748b; }
+  .act { border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 3px 10px; color: #334155; font-size: 12px; margin-right: 6px; }
+  .act:hover { background: var(--soft); } .act.danger { color: #b91c1c; border-color: #fecaca; } .act.danger:hover { background: #fef2f2; }
+  .act:disabled { opacity: .45; cursor: not-allowed; }
+  .you { font-size: 11px; color: var(--muted); margin-left: 6px; }
+  .ok-msg { margin-bottom: 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid #bbf7d0; background: #f0fdf4; color: #166534; font-size: 13px; }
+
   @media (max-width: 1200px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .row, .row.rev { grid-template-columns: 1fr; } }
   @media (max-width: 900px) {
     .side { position: fixed; left: 0; top: 0; z-index: 60; transform: translateX(-100%); transition: transform .2s ease; }
@@ -133,7 +150,7 @@
     .menu-btn { display: grid; }
     main { padding: 16px; }
   }
-  @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .push { margin-left: 0; width: 100%; } .search { width: 100%; } .filters .seg#views { width: 100%; } .btn-primary span { display: none; } .btn-primary { padding: 8px 12px; } }
+  @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .push { margin-left: 0; width: 100%; } .search { width: 100%; } .add-user input[type="email"] { width: 100%; } .filters .seg#views { width: 100%; } .btn-primary span { display: none; } .btn-primary { padding: 8px 12px; } }
 </style>
 </head>
 <body>
@@ -146,6 +163,13 @@
     <a href="#sales" data-page="sales">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       Sales Performance
+    </a>
+  </nav>
+  <h4 class="hidden" id="adminHead">ADMIN</h4>
+  <nav class="hidden" id="adminNav">
+    <a href="#admin" data-page="admin">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      Admin Panel
     </a>
   </nav>
   <div class="bottom">
@@ -219,6 +243,25 @@
   </section>
 
   <p class="foot" id="footnote"></p>
+</main>
+
+<main id="adminPage" class="hidden">
+  <section class="card panel">
+    <div class="admin-head">
+      <div><h2>Users</h2><p class="sub" style="margin-bottom:0">People who can sign in to this dashboard with Google. Viewers see the reports; admins can also manage users.</p></div>
+      <form class="add-user" id="addUserForm">
+        <label class="f">Email <input type="email" id="newEmail" placeholder="name@sarlogisolutions.com" required autocomplete="off"></label>
+        <label class="f">Role
+          <select id="newRole"><option value="viewer">Viewer</option><option value="admin">Admin</option></select>
+        </label>
+        <button class="btn-add" id="addUserBtn" type="submit">Add user</button>
+      </form>
+    </div>
+    <div class="ok-msg hidden" id="usersOk" role="status"></div>
+    <div class="alert hidden" id="usersErr" role="alert"></div>
+    <div class="tbl-wrap"><table class="users" id="usersTable"></table></div>
+    <p class="foot" id="usersCount" style="margin-top:8px"></p>
+  </section>
 </main>
 </div>
 </div>
@@ -379,7 +422,7 @@ async function api(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
   const data = await r.json().catch(() => ({}));
   if (r.status === 401) { showLogin(data.error || "Please sign in again."); throw new Error("signed out"); }
-  if (r.status === 403) { showLogin(data.error || "This Google account doesn't have access."); throw new Error("no access"); }
+  if (r.status === 403 && data.code !== "admin_only") { showLogin(data.error || "This Google account doesn't have access."); throw new Error("no access"); }
   if (!r.ok) throw new Error(data.error || r.statusText);
   return data;
 }
@@ -387,15 +430,20 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Sales Performance" };
+const PAGES = { sales: "Sales Performance", admin: "Admin Panel" };
+const isAdmin = () => state.me?.role === "admin";
 function route() {
-  const page = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : "sales";
-  for (const a of $("sideNav").querySelectorAll("a")) {
+  let page = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : "sales";
+  if (page === "admin" && !isAdmin()) page = "sales";
+  for (const a of document.querySelectorAll(".side nav a")) {
     if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
   $("pageTitle").textContent = PAGES[page];
   document.title = `${PAGES[page]} · SAR ISO Tank SG`;
   $("app").classList.toggle("hidden", page !== "sales");
+  $("adminPage").classList.toggle("hidden", page !== "admin");
+  $("refreshBtn").classList.toggle("hidden", page !== "sales");
+  if (page === "admin") loadUsers();
   closeMenu();
 }
 window.addEventListener("hashchange", route);
@@ -403,9 +451,12 @@ function openMenu() { $("side").classList.add("open"); $("backdrop").classList.r
 function closeMenu() { $("side").classList.remove("open"); $("backdrop").classList.add("hidden"); }
 $("menuBtn").onclick = openMenu;
 $("backdrop").onclick = closeMenu;
-$("sideNav").onclick = (e) => { if (e.target.closest("a")) closeMenu(); };
+for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => { if (e.target.closest("a")) closeMenu(); };
 
 function showUser(me) {
+  state.me = me;
+  $("adminHead").classList.toggle("hidden", me.role !== "admin");
+  $("adminNav").classList.toggle("hidden", me.role !== "admin");
   const name = me.name || me.email;
   $("who").textContent = `${name} · ${me.role}`;
   $("meName").textContent = name; $("meName").title = me.email;
@@ -436,7 +487,7 @@ async function loadData(withUser) {
     const [sales, me] = results;
     if (me && !me.ok) throw new Error(me.error);
     if (!sales.ok) throw new Error(sales.error);
-    if (me) showUser(me.data);
+    if (me) { showUser(me.data); route(); }
     state.lines = sales.data.lines; state.lastSync = sales.data.lastSync;
     $("dataError").classList.add("hidden");
     showSynced();
@@ -640,6 +691,72 @@ $("mCsv").onclick = () => {
   const url = URL.createObjectURL(new Blob([[head.join(","), ...body].join("\n")], { type: "text/csv" }));
   Object.assign(document.createElement("a"), { href: url, download: state.drill.title.replace(/[^\w]+/g, "_") + ".csv" }).click();
   URL.revokeObjectURL(url);
+};
+
+// ============================================================ admin panel: users
+const fmtWhen = (d) => (d ? new Date(d).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
+function usersNote(ok, err) {
+  $("usersOk").textContent = ok || ""; $("usersOk").classList.toggle("hidden", !ok);
+  $("usersErr").textContent = err || ""; $("usersErr").classList.toggle("hidden", !err);
+}
+async function usersCall(body, okMsg) {
+  try {
+    state.users = await api("/api/mongo", body);
+    usersNote(okMsg, ""); renderUsers();
+    return true;
+  } catch (e) {
+    if (e.message !== "signed out" && e.message !== "no access") usersNote("", e.message);
+    renderUsers();
+    return false;
+  }
+}
+async function loadUsers() {
+  if (!state.users) $("usersTable").innerHTML = '<tbody><tr><td style="padding:24px;color:#94a3b8">Loading users…</td></tr></tbody>';
+  usersNote("", "");
+  await usersCall({ dataset: "users" });
+}
+function renderUsers() {
+  const users = state.users || [], me = state.me?.email;
+  const admins = users.filter((u) => u.role === "admin" && !u.disabled).length;
+  $("usersCount").textContent = `${users.length} users · ${admins} active admin${admins === 1 ? "" : "s"}`;
+  $("usersTable").innerHTML = `<thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Added</th><th>Last change</th><th></th></tr></thead><tbody>`
+    + users.map((u) => {
+      const self = u.email === me, fixed = self || u.locked;
+      return `<tr data-email="${esc(u.email)}">
+        <td>${esc(u.email)}${self ? '<span class="you">(you)</span>' : ""}${u.locked ? '<span class="you">(set in Vercel)</span>' : ""}</td>
+        <td><select data-act="role" ${fixed ? "disabled" : ""} aria-label="Role for ${esc(u.email)}">
+          <option value="viewer"${u.role === "viewer" ? " selected" : ""}>Viewer</option>
+          <option value="admin"${u.role === "admin" ? " selected" : ""}>Admin</option></select></td>
+        <td><span class="status ${u.disabled ? "off" : "on"}">${u.disabled ? "Disabled" : "Active"}</span></td>
+        <td>${fmtWhen(u.addedAt)}${u.addedBy ? `<div class="foot">by ${esc(u.addedBy)}</div>` : ""}</td>
+        <td>${fmtWhen(u.updatedAt)}${u.updatedBy ? `<div class="foot">by ${esc(u.updatedBy)}</div>` : ""}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="act" data-act="toggle" ${fixed ? "disabled" : ""}>${u.disabled ? "Enable" : "Disable"}</button>
+          <button class="act danger" data-act="remove" ${fixed ? "disabled" : ""}>Remove</button></td></tr>`;
+    }).join("")
+    + (users.length ? "" : '<tr><td colspan="6" style="padding:24px;color:#94a3b8">No users yet</td></tr>') + "</tbody>";
+}
+$("addUserForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const email = $("newEmail").value.trim().toLowerCase(), role = $("newRole").value;
+  if (!email) return;
+  $("addUserBtn").disabled = true;
+  if (await usersCall({ action: "saveUser", create: true, email, role }, `${email} can now sign in as ${role}.`)) $("newEmail").value = "";
+  $("addUserBtn").disabled = false;
+};
+$("usersTable").onchange = (e) => {
+  const sel = e.target.closest('select[data-act="role"]'); if (!sel) return;
+  const email = sel.closest("tr").dataset.email, u = state.users.find((x) => x.email === email);
+  usersCall({ action: "saveUser", email, role: sel.value, disabled: u.disabled }, `${email} is now ${sel.value}.`);
+};
+$("usersTable").onclick = (e) => {
+  const b = e.target.closest("button[data-act]"); if (!b || b.disabled) return;
+  const email = b.closest("tr").dataset.email, u = state.users.find((x) => x.email === email);
+  if (b.dataset.act === "toggle") {
+    usersCall({ action: "saveUser", email, role: u.role, disabled: !u.disabled }, `${email} is ${u.disabled ? "enabled" : "disabled"}.`);
+  } else if (b.dataset.act === "remove" && confirm(`Remove ${email}? They will no longer be able to sign in.`)) {
+    usersCall({ action: "deleteUser", email }, `${email} was removed.`);
+  }
 };
 
 // ============================================================ boot

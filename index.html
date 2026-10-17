@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <script src="https://accounts.google.com/gsi/client" async></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 <style>
   /* Design tokens and components follow the other SAR dashboards (Sea Export Pricing). */
   :root {
@@ -224,24 +225,73 @@
   .pill { font-family: "Plus Jakarta Sans", sans-serif; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #E3EBFD; color: #3255B5; }
   .pill.cn { background: #FDE3DE; color: #C24A2E; } .pill.dn { background: #FEF3C7; color: #92700C; }
 
-  /* ---------- admin panel ---------- */
-  .admin-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-  .add-user { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-  .add-user label.f { color: var(--ink-soft); }
-  .add-user input[type="email"] { width: 280px; text-transform: none; }
-  .btn-add { height: 38px; border: 0; border-radius: 999px; padding: 0 20px; background: var(--grad); color: #fff; font-weight: 700; font-size: 13px; box-shadow: 0 2px 6px #2C4E8245; }
-  .btn-add:disabled { opacity: .55; }
-  .users td, .users th { text-align: left; }
-  .users td { font-family: "Plus Jakarta Sans", sans-serif; }
-  .users td:first-child, .users th:first-child { position: static; }
-  .users select { height: 30px; border: 1px solid var(--line); border-radius: 999px; padding: 0 10px; background: var(--paper); font-weight: 600; }
-  .status { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
-  .status.on { background: #E1F5EA; color: #1F8A4C; } .status.off { background: var(--paper); color: var(--ink-soft); }
-  .act { border: 1px solid var(--line); background: #fff; border-radius: 7px; padding: 4px 10px; color: var(--ink-soft); font-size: 12px; font-weight: 600; margin-right: 6px; }
-  .act:hover { background: var(--paper); color: var(--ink); } .act.danger:hover { background: #FDE3DE; color: #C24A2E; border-color: #F3B7A8; }
-  .act:disabled { opacity: .45; cursor: not-allowed; }
-  .you { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: #E1F5EA; color: #1F8A4C; font-size: 10.5px; font-weight: 700; }
-  .ok-msg { margin-bottom: 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid #BBF7D0; background: #E1F5EA; color: #1F8A4C; font-size: 12.5px; }
+  /* ---------- admin panel (matches the reference dashboard) ---------- */
+  .admin-panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+  .admin-panel-head h1 { margin: 0 0 4px; font-size: 26px; font-weight: 800; }
+  .admin-panel-head p { margin: 0; font-size: 14px; color: var(--ink-soft); }
+  .import-users-btn { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding: 10px 18px; border: 1px solid var(--line); border-radius: 999px;
+                      background: var(--card); color: var(--ink); font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+  .import-users-btn:hover { background: var(--paper); }
+  .role-group-section { margin-bottom: 32px; animation: cardRise .4s ease both; }
+  .role-group-label { margin-bottom: 12px; font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-faint); }
+  .role-group-label b { margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--ink-soft); font-weight: 700; }
+  .role-group-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .user-card { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+               transition: box-shadow .15s, transform .15s; }
+  .user-card:hover { box-shadow: 0 8px 20px rgb(15 42 77 / .08); transform: translateY(-1px); }
+  .user-card.is-disabled { opacity: .65; }
+  .user-card-avatar { flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
+  .user-card-info { flex: 1; min-width: 0; }
+  .user-card-name { font-weight: 700; font-size: 14.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .user-card-email { font-size: 12.5px; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: "JetBrains Mono", monospace; }
+  .user-card-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .user-card-role { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+  .role-admin { background: #FDE3DE; color: #C24A2E; } .role-viewer { background: #E1F5EA; color: #1F8A4C; } .role-off { background: var(--paper); color: var(--ink-soft); }
+  .user-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .user-card-icon-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--ink-soft); }
+  .user-card-icon-btn:hover { background: var(--paper); color: var(--ink); }
+  .user-card-icon-btn.danger:hover { background: #FDE3DE; color: #C24A2E; border-color: #F3B7A8; }
+  .user-card-icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+  .you { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: #E1F5EA; color: #1F8A4C; font-size: 10.5px; font-weight: 700; vertical-align: middle; }
+  .add-user-card { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 76px; border: 1.5px dashed var(--line); border-radius: 12px; background: none;
+                   color: var(--ink-soft); font-size: 13.5px; font-weight: 600; transition: background .15s, color .15s, border-color .15s, box-shadow .15s; }
+  .add-user-card:hover { background: var(--grad); border-color: transparent; color: #fff; box-shadow: 0 4px 10px #2C4E8250, 0 2px 4px #2C4E8235; }
+  .add-user-fab { position: fixed; bottom: 28px; right: 32px; z-index: 40; display: flex; align-items: center; gap: 8px; padding: 13px 22px; border: 0; border-radius: 999px;
+                  background: var(--grad); color: #fff; font-size: 14px; font-weight: 700; box-shadow: 0 8px 20px rgb(44 78 130 / .35); transition: box-shadow .15s, transform .15s; }
+  .add-user-fab:hover { box-shadow: 0 10px 24px rgb(44 78 130 / .45); transform: translateY(-1px); }
+  .ok-msg { padding: 10px 12px; border-radius: 8px; border: 1px solid #BBF7D0; background: #E1F5EA; color: #1F8A4C; font-size: 12.5px; }
+  .admin-empty { padding: 32px; text-align: center; color: var(--ink-soft); font-style: italic; }
+
+  .modal-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(15 23 42 / .45); animation: overlayFadeIn .18s ease both; }
+  .modal-box { width: 420px; max-width: 92vw; max-height: 88vh; overflow-y: auto; padding: 24px; background: var(--card); border-radius: 14px; box-shadow: 0 20px 50px rgb(15 23 42 / .25);
+               animation: modalRiseIn .22s cubic-bezier(.2,.8,.2,1) both; }
+  .modal-header-row { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+  .modal-header-row h3 { margin: 0; font-size: 19px; font-weight: 800; }
+  .modal-close-btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 0; border-radius: 8px; background: var(--paper); color: var(--ink-soft); }
+  .modal-close-btn:hover { background: var(--line); color: var(--ink); }
+  .required-star { color: #C24A2E; }
+  .modal-field { display: block; margin-bottom: 14px; }
+  .modal-field > span { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--ink-soft); }
+  .modal-field input, .modal-field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; color: var(--ink); background: var(--card); }
+  .modal-field input:disabled { background: var(--paper); color: var(--ink-soft); }
+  .modal-field select { appearance: none; background-repeat: no-repeat; background-position: right 14px center;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%235C6B80'/></svg>"); }
+  .modal-field input:focus, .modal-field select:focus { outline: none; border-color: var(--accent); }
+  .modal-error { margin-bottom: 14px; padding: 8px 10px; border-radius: 7px; background: #FDE3DE; color: #C24A2E; font-size: 12.5px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  .modal-btn-secondary, .modal-btn-primary { padding: 9px 18px; border: 0; border-radius: 999px; font-size: 13px; font-weight: 700; }
+  .modal-btn-secondary { background: var(--paper); color: var(--ink-soft); } .modal-btn-secondary:hover { background: var(--line); }
+  .modal-btn-primary { background: var(--grad); color: #fff; box-shadow: 0 2px 6px #2C4E8245, 0 1px 2px #2C4E8230; }
+  .modal-btn-primary:hover { box-shadow: 0 4px 10px #2C4E8250, 0 2px 4px #2C4E8235; }
+  .modal-btn-primary:disabled { opacity: .55; cursor: default; box-shadow: none; }
+  .import-modal-box { width: 680px; }
+  .import-modal-hint { margin: 0 0 16px; font-size: 13px; line-height: 1.5; color: var(--ink-soft); }
+  #importSummary { margin-bottom: 10px; font-size: 13px; color: var(--ink-soft); }
+  .import-preview-table-wrap { max-height: 340px; overflow-y: auto; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 10px; }
+  .import-preview-table th, .import-preview-table td { text-align: left; padding: 8px 10px; font-size: 12.5px; font-family: "Plus Jakarta Sans", sans-serif; }
+  .import-preview-table th { background: var(--paper); font-size: 10.5px; }
+  .import-preview-table td:first-child, .import-preview-table th:first-child { position: static; }
+  .import-status-ok { color: #1F8A4C; font-weight: 700; } .import-status-update { color: #3255B5; font-weight: 700; } .import-status-error { color: #C24A2E; font-weight: 700; }
 
   /* ---------- motion ---------- */
   @keyframes cardRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
@@ -267,7 +317,9 @@
   }
   @media (max-width: 640px) {
     .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .search, .add-user input[type="email"] { width: 100%; }
+    .search { width: 100%; }
+    .admin-panel-head { flex-direction: column; }
+    .add-user-fab { right: 16px; bottom: 16px; }
     .btn-primary span { display: none; }
     .drf-divider { display: none; }
     .f select { min-width: 0; }
@@ -390,23 +442,71 @@
 </main>
 
 <main id="adminPage" class="hidden">
-  <section class="card panel">
-    <div class="admin-head">
-      <div><h2>Users</h2><p class="sub" style="margin-bottom:0">People who can sign in to this dashboard with Google. Viewers see the reports; admins can also manage users.</p></div>
-      <form class="add-user" id="addUserForm">
-        <label class="f">Email <input type="email" id="newEmail" placeholder="name@sarlogisolutions.com" required autocomplete="off"></label>
-        <label class="f">Role
-          <select id="newRole"><option value="viewer">Viewer</option><option value="admin">Admin</option></select>
-        </label>
-        <button class="btn-add" id="addUserBtn" type="submit">Add user</button>
-      </form>
+  <div class="admin-panel-head">
+    <div><h1>Admin Panel</h1><p>Manage users and access</p></div>
+    <div>
+      <input type="file" id="importFile" accept=".csv,.xlsx,.xls" hidden>
+      <button type="button" class="import-users-btn" id="importBtn">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 2v8M4.5 6.5L8 10l3.5-3.5M2.5 12.5h11"/></svg>
+        Import CSV / Excel
+      </button>
     </div>
-    <div class="ok-msg hidden" id="usersOk" role="status"></div>
-    <div class="alert hidden" id="usersErr" role="alert"></div>
-    <div class="tbl-wrap"><table class="users" id="usersTable"></table></div>
-    <p class="foot" id="usersCount" style="margin-top:8px"></p>
-  </section>
+  </div>
+  <div class="ok-msg hidden" id="usersOk" role="status"></div>
+  <div class="alert hidden" id="usersErr" role="alert"></div>
+  <div id="adminGroups"></div>
+  <button type="button" class="add-user-fab" id="addUserFab">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+    Add User
+  </button>
 </main>
+
+<div class="modal-overlay hidden" id="userModal">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="userModalTitle">
+    <div class="modal-header-row">
+      <h3 id="userModalTitle">Add New User</h3>
+      <button type="button" class="modal-close-btn" data-close="userModal" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3l10 10M13 3L3 13"/></svg>
+      </button>
+    </div>
+    <form id="userForm">
+      <label class="modal-field"><span>Full Name <span class="required-star">*</span></span><input type="text" id="umName" placeholder="e.g. Rahul Sharma" maxlength="100" required></label>
+      <label class="modal-field"><span>Email <span class="required-star">*</span></span><input type="email" id="umEmail" placeholder="rahul@sarlogisolutions.com" required></label>
+      <label class="modal-field"><span>Role <span class="required-star">*</span></span>
+        <select id="umRole" required><option value="">Select a role</option><option value="admin">Admin</option><option value="viewer">Viewer</option></select></label>
+      <label class="modal-field" id="umStatusWrap"><span>Status</span>
+        <select id="umStatus"><option value="active">Active</option><option value="disabled">Disabled (can't sign in)</option></select></label>
+      <div class="modal-error hidden" id="umError"></div>
+      <div class="modal-actions">
+        <button type="button" class="modal-btn-secondary" data-close="userModal">Cancel</button>
+        <button type="submit" class="modal-btn-primary" id="umSave">Add User</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="importModal">
+  <div class="modal-box import-modal-box" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <div class="modal-header-row">
+      <h3 id="importTitle">Import Users</h3>
+      <button type="button" class="modal-close-btn" data-close="importModal" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3l10 10M13 3L3 13"/></svg>
+      </button>
+    </div>
+    <p class="import-modal-hint">Expected columns: <b>Name</b>, <b>Email</b>, and optionally <b>Role</b> (Admin or Viewer). Column names are matched loosely (not case-sensitive).</p>
+    <label class="modal-field"><span>Default Role <span style="text-transform:none;font-weight:400">(used for any row without its own Role)</span></span>
+      <select id="importDefaultRole"><option value="viewer">Viewer</option><option value="admin">Admin</option><option value="">None — require a Role column</option></select></label>
+    <div id="importSummary"></div>
+    <div class="import-preview-table-wrap">
+      <table class="import-preview-table"><thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead><tbody id="importBody"></tbody></table>
+    </div>
+    <div class="modal-error hidden" id="importError"></div>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn-secondary" data-close="importModal">Cancel</button>
+      <button type="button" class="modal-btn-primary" id="importConfirm">Import</button>
+    </div>
+  </div>
+</div>
 </div>
 </div>
 
@@ -612,7 +712,7 @@ function route() {
     if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
   $("pageTitle").textContent = PAGES[page];
-  $("pageTitle").classList.toggle("hidden", page === "sales");
+  $("pageTitle").classList.add("hidden");
   $("filters").classList.toggle("hidden", page !== "sales");
   document.title = `${PAGES[page]} · SAR ISO Tank SG`;
   $("app").classList.toggle("hidden", page !== "sales");
@@ -747,7 +847,7 @@ function render() {
     return `<button class="kpi" data-cat="${cat || ""}" title="${esc(money(v))}" style="border-top-color:${cat ? CAT_COLORS[cat] : "#1E3A8A"}">
       <div class="lbl">${label}</div>
       <div class="val">${moneyCr(v)}</div>
-      <div class="note${cat ? "" : " muted"}">${cat ? "Net of credit notes" : `Gross ${moneyCr(k.gross)} · CN ${moneyCr(k.credit)}`}</div></button>`;
+      ${cat ? "" : `<div class="note muted">Gross ${moneyCr(k.gross)} · CN ${moneyCr(k.credit)}</div>`}</button>`;
   }).join("");
 
   // Only the visible view is drawn (Chart.js can't size a hidden canvas).
@@ -1121,6 +1221,7 @@ $("overlay").onclick = (e) => { if (e.target === $("overlay")) closeDrill(); };
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
+  else for (const id of ["userModal", "importModal"]) closeModal(id);
 });
 $("mCsv").onclick = () => {
   const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
@@ -1131,69 +1232,175 @@ $("mCsv").onclick = () => {
   URL.revokeObjectURL(url);
 };
 
-// ============================================================ admin panel: users
-const fmtWhen = (d) => (d ? new Date(d).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
+// ============================================================ admin panel: users (layout follows the reference dashboard)
+const ROLE_GROUPS = [["admin", "Admin"], ["viewer", "Viewer"]];
+const AVATAR_COLORS = ["#2F6FB0", "#0EA6A6", "#1F9D5A", "#C99A3B", "#D6534A", "#7B5EA7", "#173A66"];
+const avatarColor = (s) => { let h = 0; for (const ch of s || "") h = (h * 31 + ch.charCodeAt(0)) % 997; return AVATAR_COLORS[h % AVATAR_COLORS.length]; };
+const initials = (s) => { const p = (s || "").replace(/@.*/, "").split(/[\s._-]+/).filter(Boolean); return ((p[0]?.[0] || "?") + (p[1]?.[0] || "")).toUpperCase(); };
+const ICON_EDIT = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M11 2l3 3-8 8-3.5.5.5-3.5z"/></svg>';
+const ICON_DEL = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M4.5 4.5l.5 9a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-9"/></svg>';
+
 function usersNote(ok, err) {
   $("usersOk").textContent = ok || ""; $("usersOk").classList.toggle("hidden", !ok);
   $("usersErr").textContent = err || ""; $("usersErr").classList.toggle("hidden", !err);
 }
-async function usersCall(body, okMsg) {
-  try {
-    state.users = await api("/api/mongo", body);
-    usersNote(okMsg, ""); renderUsers();
-    return true;
-  } catch (e) {
-    if (e.message !== "signed out" && e.message !== "no access") usersNote("", e.message);
-    renderUsers();
-    return false;
-  }
-}
 async function loadUsers() {
-  if (!state.users) $("usersTable").innerHTML = '<tbody><tr><td style="padding:24px;color:#94a3b8">Loading users…</td></tr></tbody>';
   usersNote("", "");
-  await usersCall({ dataset: "users" });
+  if (!state.users) $("adminGroups").innerHTML = '<div class="admin-empty">Loading…</div>';
+  try { state.users = await api("/api/mongo", { dataset: "users" }); renderUsers(); }
+  catch (e) { if (e.message !== "signed out" && e.message !== "no access") usersNote("", e.message); }
 }
 function renderUsers() {
   const users = state.users || [], me = state.me?.email;
-  const admins = users.filter((u) => u.role === "admin" && !u.disabled).length;
-  $("usersCount").textContent = `${users.length} users · ${admins} active admin${admins === 1 ? "" : "s"}`;
-  $("usersTable").innerHTML = `<thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Added</th><th>Last change</th><th></th></tr></thead><tbody>`
-    + users.map((u) => {
-      const self = u.email === me, fixed = self || u.locked;
-      return `<tr data-email="${esc(u.email)}">
-        <td>${esc(u.email)}${self ? '<span class="you">(you)</span>' : ""}${u.locked ? '<span class="you">(set in Vercel)</span>' : ""}</td>
-        <td><select data-act="role" ${fixed ? "disabled" : ""} aria-label="Role for ${esc(u.email)}">
-          <option value="viewer"${u.role === "viewer" ? " selected" : ""}>Viewer</option>
-          <option value="admin"${u.role === "admin" ? " selected" : ""}>Admin</option></select></td>
-        <td><span class="status ${u.disabled ? "off" : "on"}">${u.disabled ? "Disabled" : "Active"}</span></td>
-        <td>${fmtWhen(u.addedAt)}${u.addedBy ? `<div class="foot">by ${esc(u.addedBy)}</div>` : ""}</td>
-        <td>${fmtWhen(u.updatedAt)}${u.updatedBy ? `<div class="foot">by ${esc(u.updatedBy)}</div>` : ""}</td>
-        <td style="text-align:right;white-space:nowrap">
-          <button class="act" data-act="toggle" ${fixed ? "disabled" : ""}>${u.disabled ? "Enable" : "Disable"}</button>
-          <button class="act danger" data-act="remove" ${fixed ? "disabled" : ""}>Remove</button></td></tr>`;
-    }).join("")
-    + (users.length ? "" : '<tr><td colspan="6" style="padding:24px;color:#94a3b8">No users yet</td></tr>') + "</tbody>";
+  if (!users.length) { $("adminGroups").innerHTML = '<div class="admin-empty">No users found.</div>'; return; }
+  $("adminGroups").innerHTML = ROLE_GROUPS.map(([role, label]) => {
+    const group = users.filter((u) => u.role === role).sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
+    const cards = group.map((u) => {
+      const self = u.email === me, fixed = self || u.locked, who = u.name || u.email;
+      return `<div class="user-card${u.disabled ? " is-disabled" : ""}" data-email="${esc(u.email)}">
+        <div class="user-card-avatar" style="background:${avatarColor(who)}">${esc(initials(who))}</div>
+        <div class="user-card-info">
+          <div class="user-card-name" title="${esc(u.name || "")}">${u.name ? esc(u.name) : '<span class="blank">(no name yet)</span>'}${self ? '<span class="you">You</span>' : ""}</div>
+          <div class="user-card-email" title="${esc(u.email)}">${esc(u.email)}</div>
+          <div class="user-card-pills"><span class="user-card-role role-${role}">${label}</span>${u.disabled ? '<span class="user-card-role role-off">Disabled</span>' : ""}${u.locked ? '<span class="user-card-role role-off">Set in Vercel</span>' : ""}</div>
+        </div>
+        <div class="user-card-actions">
+          <button type="button" class="user-card-icon-btn" data-act="edit" title="Edit"${u.locked ? " disabled" : ""}>${ICON_EDIT}</button>
+          <button type="button" class="user-card-icon-btn danger" data-act="delete" title="${self ? "You can't remove yourself" : "Delete"}"${fixed ? " disabled" : ""}>${ICON_DEL}</button>
+        </div>
+      </div>`;
+    }).join("");
+    return `<div class="role-group-section">
+      <div class="role-group-label">${label}<b>${group.length}</b></div>
+      <div class="role-group-grid">${cards}
+        <button type="button" class="add-user-card" data-add-role="${role}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v10M3 8h10"/></svg>Add</button>
+      </div></div>`;
+  }).join("");
 }
-$("addUserForm").onsubmit = async (e) => {
-  e.preventDefault();
-  const email = $("newEmail").value.trim().toLowerCase(), role = $("newRole").value;
-  if (!email) return;
-  $("addUserBtn").disabled = true;
-  if (await usersCall({ action: "saveUser", create: true, email, role }, `${email} can now sign in as ${role}.`)) $("newEmail").value = "";
-  $("addUserBtn").disabled = false;
-};
-$("usersTable").onchange = (e) => {
-  const sel = e.target.closest('select[data-act="role"]'); if (!sel) return;
-  const email = sel.closest("tr").dataset.email, u = state.users.find((x) => x.email === email);
-  usersCall({ action: "saveUser", email, role: sel.value, disabled: u.disabled }, `${email} is now ${sel.value}.`);
-};
-$("usersTable").onclick = (e) => {
+$("adminGroups").onclick = async (e) => {
+  const add = e.target.closest("[data-add-role]");
+  if (add) return openUserModal(null, add.dataset.addRole);
   const b = e.target.closest("button[data-act]"); if (!b || b.disabled) return;
-  const email = b.closest("tr").dataset.email, u = state.users.find((x) => x.email === email);
-  if (b.dataset.act === "toggle") {
-    usersCall({ action: "saveUser", email, role: u.role, disabled: !u.disabled }, `${email} is ${u.disabled ? "enabled" : "disabled"}.`);
-  } else if (b.dataset.act === "remove" && confirm(`Remove ${email}? They will no longer be able to sign in.`)) {
-    usersCall({ action: "deleteUser", email }, `${email} was removed.`);
+  const email = b.closest(".user-card").dataset.email, u = state.users.find((x) => x.email === email);
+  if (b.dataset.act === "edit") return openUserModal(u);
+  if (!confirm(`Remove ${u.name ? `${u.name} (${email})` : email} from the dashboard? They will no longer be able to sign in.`)) return;
+  try { state.users = await api("/api/mongo", { action: "deleteUser", email }); usersNote(`${email} was removed.`, ""); renderUsers(); }
+  catch (err) { if (err.message !== "signed out" && err.message !== "no access") usersNote("", err.message); }
+};
+$("addUserFab").onclick = () => openUserModal(null, "");
+
+// ---- Add / Edit user modal
+let editing = null;
+function openModal(id) { $(id).classList.remove("hidden"); }
+function closeModal(id) { $(id).classList.add("hidden"); }
+for (const b of document.querySelectorAll("[data-close]")) b.onclick = () => closeModal(b.dataset.close);
+for (const id of ["userModal", "importModal"]) $(id).onclick = (e) => { if (e.target === $(id)) closeModal(id); };
+function openUserModal(u, presetRole) {
+  editing = u;
+  $("userModalTitle").textContent = u ? "Edit User" : "Add New User";
+  $("umSave").textContent = u ? "Save Changes" : "Add User";
+  $("umName").value = u?.name || "";
+  $("umEmail").value = u?.email || ""; $("umEmail").disabled = !!u;
+  $("umRole").value = u ? u.role : (presetRole || "");
+  $("umStatus").value = u?.disabled ? "disabled" : "active";
+  $("umStatusWrap").classList.toggle("hidden", !u);
+  const self = u && u.email === state.me?.email;
+  $("umRole").disabled = !!self; $("umStatus").disabled = !!self;
+  $("umError").classList.add("hidden");
+  openModal("userModal");
+  (u ? $("umName") : $("umName")).focus();
+}
+$("userForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const name = $("umName").value.trim(), email = $("umEmail").value.trim().toLowerCase(), role = $("umRole").value;
+  if (!name || !email || !role) { $("umError").textContent = "Full Name, Email, and Role are all required."; $("umError").classList.remove("hidden"); return; }
+  $("umSave").disabled = true; $("umSave").textContent = "Saving…";
+  try {
+    state.users = await api("/api/mongo", { action: "saveUser", create: !editing, email, name, role, disabled: $("umStatus").value === "disabled" });
+    closeModal("userModal");
+    usersNote(editing ? `${name} was updated.` : `${name} (${email}) can now sign in as ${role}.`, "");
+    renderUsers();
+  } catch (err) {
+    if (err.message !== "signed out" && err.message !== "no access") { $("umError").textContent = err.message; $("umError").classList.remove("hidden"); }
+  } finally {
+    $("umSave").disabled = false; $("umSave").textContent = editing ? "Save Changes" : "Add User";
+  }
+};
+
+// ---- Import CSV / Excel with preview
+let importRows = [];
+const normKey = (k) => String(k || "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+const IMPORT_ALIASES = { name: ["name", "fullname", "employeename"], email: ["email", "emailaddress", "emailid"], role: ["role"] };
+function mapImportRow(raw) {
+  const entries = Object.keys(raw).map((k) => [normKey(k), raw[k]]);
+  const get = (f) => { for (const a of IMPORT_ALIASES[f]) { const hit = entries.find(([k]) => k === a); if (hit) return String(hit[1] ?? "").trim(); } return ""; };
+  return { name: get("name"), email: get("email").toLowerCase(), role: get("role").toLowerCase() };
+}
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = (e) => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  if (!window.XLSX) { usersNote("", "The spreadsheet reader is still loading — try again in a moment."); return; }
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: "array" });
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+      if (!raw.length) { usersNote("", "That file doesn't contain any rows."); return; }
+      importRows = raw.map(mapImportRow);
+      $("importDefaultRole").value = "viewer";
+      validateImport();
+      openModal("importModal");
+    } catch { usersNote("", "Could not read that file. Please use a CSV or Excel file."); }
+  };
+  reader.readAsArrayBuffer(file);
+};
+$("importDefaultRole").onchange = validateImport;
+let importChecked = [];
+function validateImport() {
+  const def = $("importDefaultRole").value, byEmail = new Map((state.users || []).map((u) => [u.email, u])), seen = new Set(), me = state.me?.email;
+  importChecked = importRows.map((r, i) => {
+    const role = r.role || def, out = { n: i + 1, ...r, role };
+    const existing = byEmail.get(r.email);
+    if (!r.name || !EMAIL_OK.test(r.email)) return { ...out, status: "error", reason: !r.name ? "Missing name" : "Missing or invalid email" };
+    if (!role) return { ...out, status: "error", reason: "Missing Role (pick a Default Role above)" };
+    if (!["admin", "viewer"].includes(role)) return { ...out, status: "error", reason: `Unknown role "${r.role}"` };
+    if (seen.has(r.email)) return { ...out, status: "error", reason: "Duplicate email in this file" };
+    seen.add(r.email);
+    if (existing?.locked) return { ...out, status: "error", reason: "Set in Vercel (ADMIN_EMAILS)" };
+    if (r.email === me && role !== "admin") return { ...out, status: "error", reason: "Can't remove your own admin access" };
+    if (!existing) return { ...out, status: "ok", reason: "New" };
+    const changes = [];
+    if (existing.role !== role) changes.push(`role → ${role}`);
+    if (r.name && existing.name !== r.name) changes.push("name");
+    return changes.length ? { ...out, status: "update", reason: `Existing user — ${changes.join(", ")}` } : { ...out, status: "unchanged", reason: "Already up to date" };
+  });
+  const count = (st) => importChecked.filter((r) => r.status === st).length;
+  const nNew = count("ok"), nUpd = count("update"), nSame = count("unchanged"), nErr = count("error");
+  $("importSummary").innerHTML = [nNew && `<span class="import-status-ok">${nNew} new</span>`, nUpd && `<span class="import-status-update">${nUpd} update${nUpd === 1 ? "" : "s"}</span>`,
+    nSame && `<span>${nSame} unchanged</span>`, nErr && `<span class="import-status-error">${nErr} skipped</span>`].filter(Boolean).join(" &nbsp;•&nbsp; ");
+  const cls = { ok: "import-status-ok", update: "import-status-update", error: "import-status-error", unchanged: "" };
+  $("importBody").innerHTML = importChecked.map((r) => `<tr><td>${r.n}</td><td>${esc(r.name) || "–"}</td><td class="mono">${esc(r.email) || "–"}</td>
+    <td>${r.role ? (r.role === "admin" ? "Admin" : r.role === "viewer" ? "Viewer" : esc(r.role)) : "–"}</td><td><span class="${cls[r.status]}">${esc(r.reason)}</span></td></tr>`).join("");
+  const n = nNew + nUpd;
+  $("importConfirm").textContent = n ? `Import / Update ${n} Row${n === 1 ? "" : "s"}` : "Nothing To Do";
+  $("importConfirm").disabled = !n;
+  $("importError").classList.add("hidden");
+}
+const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+$("importConfirm").onclick = async () => {
+  const rows = importChecked.filter((r) => r.status === "ok" || r.status === "update").map(({ name, email, role }) => ({ name, email, role }));
+  if (!rows.length) return;
+  $("importConfirm").disabled = true; $("importConfirm").textContent = "Importing…";
+  try {
+    const res = await api("/api/mongo", { action: "bulkSaveUsers", users: rows });
+    state.users = res.users;
+    closeModal("importModal");
+    usersNote(`Import complete: ${res.added} added, ${res.updated} updated${res.skipped.length ? `, ${res.skipped.length} skipped` : ""}.`, "");
+    renderUsers();
+  } catch (err) {
+    if (err.message !== "signed out" && err.message !== "no access") { $("importError").textContent = err.message; $("importError").classList.remove("hidden"); }
+    $("importConfirm").disabled = false;
   }
 };
 

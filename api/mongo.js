@@ -6,13 +6,15 @@
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
 //
 // Every POST needs "Authorization: Bearer <Google ID token>" from Google sign-in.
-// Environment: MONGODB_URI, MONGODB_DB, GOOGLE_CLIENT_ID, ADMIN_EMAILS, ALLOWED_DOMAINS.
+// Environment: MONGODB_URI, MONGODB_DB, ADMIN_EMAILS, ALLOWED_DOMAINS (GOOGLE_CLIENT_ID optional).
 
 import { MongoClient, Binary } from "mongodb";
 import { createHash } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
 
 const DB_NAME = process.env.MONGODB_DB || "sar_iso_dashboard";
+// Google OAuth Web client (project "sar-iso-dashboard"). Not a secret; GOOGLE_CLIENT_ID overrides it.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "416635306158-uekjjb4k7barhpr7k8s774r9hskmt9an.apps.googleusercontent.com";
 
 // ---------------------------------------------------------------- database
 
@@ -51,8 +53,7 @@ async function verifyGoogleToken(idToken) {
   const hit = tokenCache.get(idToken);
   if (hit && hit.exp > Date.now()) return hit.user;
 
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) throw new HttpError(500, "GOOGLE_CLIENT_ID is not set");
+  const clientId = GOOGLE_CLIENT_ID;
   const r = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
   if (!r.ok) throw new HttpError(401, "Sign-in expired. Please sign in again.");
   const t = await r.json();
@@ -214,7 +215,7 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   try {
     if (req.method === "GET" && req.query?.config !== undefined) {
-      return res.status(200).json({ googleClientId: process.env.GOOGLE_CLIENT_ID || null });
+      return res.status(200).json({ googleClientId: GOOGLE_CLIENT_ID });
     }
     if (req.method !== "POST") throw new HttpError(405, "Use POST");
     const user = await authenticate(req);

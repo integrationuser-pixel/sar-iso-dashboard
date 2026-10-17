@@ -2,7 +2,8 @@
 //
 //   GET  /api/mongo?config=1              -> { googleClientId }            (public)
 //   POST /api/mongo  { dataset: "sales" } -> sales lines for the dashboard (signed in)
-//   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in)
+//   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in; login: true also records a sign-in)
+//   POST /api/mongo  { dataset: "usage" } -> sign-in stats per user + logins per day  (admins)
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
 //   POST /api/mongo  { dataset: "users" }                 -> users with access     (admins)
 //   POST /api/mongo  { action: "saveUser", email, name, role, disabled, create } -> users  (admins)
@@ -290,14 +291,79 @@ async function deleteUser(body, user) {
   return listUsers();
 }
 
+// ---------------------------------------------------------------- usage analytics
+// One document per sign-in in dashboardLogins: { email, name, at }.
+
+const USAGE_TZ = "Asia/Kolkata";
+const USAGE_DAYS = 30;
+let loginIndexReady = false;
+
+async function recordLogin(user) {
+  const db = await getDb();
+  const logins = db.collection("dashboardLogins");
+  if (!loginIndexReady) { await logins.createIndex({ at: -1 }).catch(() => {}); loginIndexReady = true; }
+  await logins.insertOne({ email: user.email, name: user.name, at: new Date() });
+}
+
+async function usageAnalytics(user) {
+  requireAdmin(user);
+  const db = await getDb();
+  const logins = db.collection("dashboardLogins");
+  const now = Date.now(), day = 86400000;
+  const since = new Date(now - USAGE_DAYS * day);
+  const [listed, perUser, perDay] = await Promise.all([
+    listUsers(),
+    logins.aggregate([
+      { $group: { _id: "$email", name: { $last: "$name" }, totalLogins: { $sum: 1 }, lastLogin: { $max: "$at" },
+                  logins30: { $sum: { $cond: [{ $gte: ["$at", since] }, 1, 0] } } } },
+    ]).toArray(),
+    logins.aggregate([
+      { $match: { at: { $gte: since } } },
+      { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$at", timezone: USAGE_TZ } },
+                  logins: { $sum: 1 }, users: { $addToSet: "$email" } } },
+    ]).toArray(),
+  ]);
+
+  const stats = new Map(perUser.map((d) => [d._id, d]));
+  const users = listed.map((u) => {
+    const st = stats.get(u.email); stats.delete(u.email);
+    return { email: u.email, name: u.name || st?.name || "", role: u.role, disabled: u.disabled,
+             totalLogins: st?.totalLogins || 0, logins30: st?.logins30 || 0, lastLogin: st?.lastLogin || null };
+  });
+  // people who signed in through ALLOWED_DOMAINS or were removed since
+  for (const st of stats.values()) {
+    users.push({ email: st._id, name: st.name || "", role: "viewer", disabled: false, notListed: true,
+                 totalLogins: st.totalLogins, logins30: st.logins30, lastLogin: st.lastLogin });
+  }
+  users.sort((a, b) => (b.lastLogin ? +new Date(b.lastLogin) : 0) - (a.lastLogin ? +new Date(a.lastLogin) : 0) || a.email.localeCompare(b.email));
+
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: USAGE_TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+  const byDay = new Map(perDay.map((d) => [d._id, d]));
+  const daily = [];
+  for (let i = USAGE_DAYS - 1; i >= 0; i--) {
+    const key = fmt.format(new Date(now - i * day));
+    daily.push({ date: key, logins: byDay.get(key)?.logins || 0, users: byDay.get(key)?.users.length || 0 });
+  }
+
+  const week = now - 7 * day;
+  return {
+    totalUsers: users.filter((u) => !u.notListed).length,
+    activeUsers: users.filter((u) => !u.notListed && !u.disabled).length,
+    loggedInLast7Days: users.filter((u) => u.lastLogin && +new Date(u.lastLogin) >= week).length,
+    logins30: daily.reduce((n, d) => n + d.logins, 0),
+    days: USAGE_DAYS, timezone: USAGE_TZ, daily, users,
+  };
+}
+
 // ---------------------------------------------------------------- request handling
 
 /** Runs one request ({ dataset } or { collection, pipeline }) for a signed-in user. */
 export async function runRequest(body, user) {
   if (!body || typeof body !== "object") throw new HttpError(400, "Request body must be JSON");
   if (body.dataset === "sales") return salesDataset();
-  if (body.dataset === "me") return user;
+  if (body.dataset === "me") { if (body.login === true) await recordLogin(user).catch((e) => console.error(e)); return user; }
   if (body.dataset === "users") { requireAdmin(user); return listUsers(); }
+  if (body.dataset === "usage") return usageAnalytics(user);
   if (body.action === "saveUser") return saveUser(body, user);
   if (body.action === "deleteUser") return deleteUser(body, user);
   if (body.action === "bulkSaveUsers") return bulkSaveUsers(body, user);

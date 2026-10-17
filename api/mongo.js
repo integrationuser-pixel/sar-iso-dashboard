@@ -131,7 +131,7 @@ async function buildSales(db, mappings, lastSync) {
   const rows = await db.collection("tblInvoice").find(
     { recordType: "C", voucherCode: { $in: Object.keys(SALES_VOUCHERS) } },
     { projection: { _id: 0, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, lineNo: 1, chargeName: 1,
-        chargeTotalAmountHc: 1, billingPartyName: 1, polName: 1, podName: 1, blNo: 1, jobNo: 1 } },
+        chargeTotalAmountHc: 1, billingPartyName: 1, shipperName: 1, polName: 1, podName: 1, blNo: 1, jobNo: 1 } },
   ).toArray();
 
   const lines = [];
@@ -150,6 +150,8 @@ async function buildSales(db, mappings, lastSync) {
       category: catOf.get(charge) ?? "Other",
       amount: (docType === "Credit Note" ? -1 : 1) * (r.chargeTotalAmountHc ?? 0),  // USD, credit notes negative
       agent: s(r.billingPartyName) || "(Unknown)",
+      shipper: s(r.shipperName),
+      pol, pod,
       lane: blNo && pol && pod && !SUNDRY.has(r.voucherCode) ? `${pol} → ${pod}` : null,
       blNo,
       jobNo: s(r.jobNo),
@@ -162,7 +164,7 @@ async function buildSales(db, mappings, lastSync) {
 // The Atlas cluster downloads slowly (~100 KB/s), so the built dataset is kept gzipped in
 // `dashboardCache` and rebuilt only after a new tblInvoice sync or a charge-mapping change.
 const TTL_MS = 2 * 60 * 1000;
-const SNAPSHOT_ID = "sales-html-v1";
+const SNAPSHOT_ID = "sales-html-v2";
 
 async function salesDataset() {
   if (g._sarSales && Date.now() - g._sarSales.at < TTL_MS) return g._sarSales.data;

@@ -231,6 +231,39 @@
   .pill { font-family: "Plus Jakarta Sans", sans-serif; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #E3EBFD; color: #3255B5; }
   .pill.cn { background: #FDE3DE; color: #C24A2E; } .pill.dn { background: #FEF3C7; color: #92700C; }
 
+  /* ---------- M&R operations ---------- */
+  #mrPage { align-content: start; }
+  .mr-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .mr-controls select { max-width: 260px; }
+  .mr-tab { display: grid; gap: 20px; animation: viewFadeIn .35s ease both; }
+  .mr-tab.hidden { display: none; }
+  .kpis.mr-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .mr-pivot th:not(:first-child), .mr-pivot td:not(:first-child) { text-align: right; }
+  .mr-pivot td:first-child { min-width: 320px; }
+  .mr-pivot tr.lv0 td { font-weight: 700; font-size: 13px; }
+  .mr-pivot tbody tr.lv1 { background: #FCFDFF; }
+  .mr-pivot tr.lv1 td:first-child { padding-left: 46px; color: var(--ink-soft); }
+  .mr-pivot tbody tr:hover { background: #EFF4FF; }
+  .pct-bar { display: inline-block; width: 70px; height: 5px; margin-right: 8px; border-radius: 3px; background: var(--paper); vertical-align: middle; overflow: hidden; }
+  .pct-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .mr-depot th, .mr-depot td { text-align: right; }
+  .mr-depot th:nth-child(-n+3), .mr-depot td:nth-child(-n+3) { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
+  .mr-depot td:nth-child(2), .mr-depot td:nth-child(3) { max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); }
+  .mr-depot td:first-child { min-width: 200px; font-weight: 600; }
+  .mr-depot tr.sub td { background: #F6F8FC; font-weight: 700; }
+  .mr-depot th.rt, .mr-depot td.rt { background: #F0F4FF; font-weight: 700; }
+  .mr-depot tr.sub td.rt { background: #E4EBFA; }
+  .mr-depot td.warn { color: #C24A2E; font-weight: 700; }
+  .mr-depot tfoot td, .mr-pivot tfoot td { font-family: "JetBrains Mono", monospace; }
+  .mr-depot tfoot td:first-child, .mr-pivot tfoot td:first-child { font-family: "Plus Jakarta Sans", sans-serif; }
+  .tank-table td { font-family: "Plus Jakarta Sans", sans-serif; }
+  .tank-table td.mono { font-family: "JetBrains Mono", monospace; }
+  .tank-table td.name { max-width: 220px; }
+  .bucket-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+  .idle-hi { color: #C24A2E; font-weight: 700; }
+  @media (max-width: 1200px) { .kpis.mr-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .kpis.mr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .mr-pivot td:first-child { min-width: 220px; } }
+
   /* ---------- usage analytics (matches the reference dashboard) ---------- */
   .ua-actions { display: flex; flex-wrap: wrap; gap: 10px; }
   .import-users-btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -363,6 +396,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       Sales Performance
     </a>
+    <a href="/" data-page="mr">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
+      M&amp;R Operations
+    </a>
   </nav>
   <h4 class="hidden" id="adminHead">ADMIN</h4>
   <nav class="hidden" id="adminNav">
@@ -469,6 +506,51 @@
   </section>
 
   <p class="foot" id="footnote"></p>
+</main>
+
+<main id="mrPage" class="hidden">
+  <div class="alert hidden" id="mrErr" role="alert"></div>
+  <div class="card viewbar">
+    <div><h2 id="mrTitle">Current Inventory</h2><p class="sub" id="mrSub">Loading…</p></div>
+    <div class="mr-controls">
+      <label class="f">Principal <select id="mrPrincipal"><option value="">All principals</option></select></label>
+      <div class="view-toggle" id="mrTabs" role="group" aria-label="M&amp;R report">
+        <button data-tab="inventory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Current Inventory</button>
+        <button data-tab="depot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12M7 21v-7h10v7"/></svg>Depot Report</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mrInventory" class="mr-tab">
+    <div class="kpis mr-kpis" id="mrKpis"></div>
+    <div class="row">
+      <section class="card panel"><h2>Tanks by Agent</h2><p class="sub">Top 10 agents holding tanks (agent on the latest movement) — click a bar for the tanks</p><div class="chart"><canvas id="mrAgentChart"></canvas></div></section>
+      <section class="card panel"><h2>Tanks by Principal</h2><p class="sub">Click a slice for the tanks</p><div class="chart" style="height:280px"><canvas id="mrPrincipalChart"></canvas></div><div class="legend" id="mrPrincipalLegend"></div></section>
+    </div>
+    <section class="card panel">
+      <div class="tools" style="justify-content:space-between">
+        <div><h2>Principal → Activity</h2><p class="sub" style="margin-bottom:0">Tanks by principal and current activity — click a number for the tanks</p></div>
+        <div class="tools" style="margin:0">
+          <button class="btn" id="mrExpand">Expand all</button><button class="btn" id="mrCollapse">Collapse all</button>
+          <button class="btn" id="mrPivotXlsx">Export to Excel</button>
+        </div>
+      </div>
+      <div class="tbl-wrap"><table class="mr-pivot" id="mrPivot"></table></div>
+    </section>
+  </div>
+
+  <div id="mrDepot" class="mr-tab hidden">
+    <section class="card panel">
+      <div class="tools" style="justify-content:space-between">
+        <div><h2>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
+        <div class="tools" style="margin:0">
+          <input class="search" id="mrDepotSearch" placeholder="Search depot, agent, principal…">
+          <button class="btn" id="mrDepotXlsx">Export to Excel</button>
+        </div>
+      </div>
+      <div class="tbl-wrap" style="max-height:640px"><table class="mr-depot" id="mrDepotTable"></table></div>
+    </section>
+  </div>
 </main>
 
 <main id="usagePage" class="hidden">
@@ -585,6 +667,20 @@
       </div>
     </div>
     <div class="body"><table id="sTable" class="sum-table"></table></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="mrOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tTitle">
+    <div class="head">
+      <div><h3 id="tTitle"></h3><div class="foot" id="tSub"></div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="search" id="tSearch" placeholder="Search container, agent, location…" style="width:240px">
+        <button class="btn" id="tXlsx">Export to Excel</button>
+        <button class="btn" id="tClose" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="body"><table id="tTable" class="tank-table"></table></div>
   </div>
 </div>
 
@@ -769,7 +865,7 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Sales Performance", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Sales Performance", mr: "M&R Operations", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";
@@ -788,9 +884,11 @@ function route(next) {
   $("app").classList.toggle("hidden", page !== "sales");
   $("adminPage").classList.toggle("hidden", page !== "admin");
   $("usagePage").classList.toggle("hidden", page !== "usage");
-  $("refreshBtn").classList.toggle("hidden", page !== "sales");
+  $("mrPage").classList.toggle("hidden", page !== "mr");
+  $("refreshBtn").classList.toggle("hidden", page !== "sales" && page !== "mr");
   if (page === "admin") loadUsers();
   if (page === "usage") loadUsage();
+  if (page === "mr") { if (mr.data) renderMr(); else loadMr(); }
   closeMenu();
 }
 function openMenu() { $("side").classList.add("open"); $("backdrop").classList.remove("hidden"); }
@@ -852,7 +950,7 @@ async function loadData(withUser) {
     $("refreshBtn").disabled = false;
   }
 }
-$("refreshBtn").onclick = () => loadData(false);
+$("refreshBtn").onclick = () => (currentPage === "mr" ? loadMr() : loadData(false));
 
 // ============================================================ filter bar
 $("views").innerHTML = VIEWS.map(([v, l]) => `<option value="${v}">${l === "Custom Range" ? "Custom View" : `${l} View`}</option>`).join("");
@@ -1294,7 +1392,7 @@ $("mClose").onclick = closeDrill;
 $("overlay").onclick = (e) => { if (e.target === $("overlay")) closeDrill(); };
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
+  if (mr.drill) closeTanks(); else if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
   else for (const id of ["userModal", "importModal"]) closeModal(id);
 });
 $("mCsv").onclick = () => {
@@ -1305,6 +1403,294 @@ $("mCsv").onclick = () => {
   Object.assign(document.createElement("a"), { href: url, download: state.drill.title.replace(/[^\w]+/g, "_") + ".csv" }).click();
   URL.revokeObjectURL(url);
 };
+
+// ============================================================ M&R operations
+const MR_BUCKETS = ["Empty", "Loaded Full", "Sent to Consignee", "On Lease", "Under Cleaning", "Under Repair", "Under Survey", "Other"];
+const MR_COLORS = { Empty: "#2563EB", "Loaded Full": "#1F8A4C", "Sent to Consignee": "#0E9AA7", "On Lease": "#7B5EA7",
+                    "Under Cleaning": "#D98E04", "Under Repair": "#C24A2E", "Under Survey": "#C99A3B", Other: "#94A3B8" };
+const MR_LABEL = { Other: "Other Activity" };
+const PRINCIPAL_COLORS = ["#1E3A8A", "#0E9AA7", "#D98E04", "#7B5EA7", "#1F8A4C", "#C24A2E"];
+const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), principal: "", open: new Set(), depotQ: "", drill: null, drillQ: "" };
+const n0 = (v) => Number(v || 0).toLocaleString("en-IN");
+const DAY_MS = 86400000;
+const idleDays = (t) => (t.date ? Math.max(0, Math.floor((Date.now() - new Date(t.date + "T00:00")) / DAY_MS)) : null);
+const mrTanks = () => (mr.data?.tanks || []).filter((t) => !mr.principal || t.principal === mr.principal);
+
+async function loadMr() {
+  $("mrErr").classList.add("hidden");
+  $("refreshBtn").disabled = true;
+  if (!mr.data) { $("mrKpis").innerHTML = '<div class="skel"></div>'.repeat(5); $("mrSub").textContent = "Loading tank inventory…"; }
+  try {
+    mr.data = await api("/api/mongo", { dataset: "mr" });
+    const ps = [...new Set(mr.data.tanks.map((t) => t.principal))].sort();
+    if (mr.principal && !ps.includes(mr.principal)) mr.principal = "";
+    $("mrPrincipal").innerHTML = '<option value="">All principals</option>' + ps.map((p) => `<option${p === mr.principal ? " selected" : ""}>${esc(p)}</option>`).join("");
+    renderMr();
+  } catch (e) {
+    if (e.message === "signed out" || e.message === "no access") return;
+    $("mrErr").textContent = "Could not load M&R data: " + e.message; $("mrErr").classList.remove("hidden");
+    if (!mr.data) $("mrKpis").innerHTML = "";
+  } finally { $("refreshBtn").disabled = false; }
+}
+$("mrPrincipal").onchange = (e) => { mr.principal = e.target.value; renderMr(); };
+$("mrTabs").onclick = (e) => { const b = e.target.closest("button[data-tab]"); if (!b) return; mr.tab = b.dataset.tab; store.set("sar.mrTab", mr.tab); renderMr(); };
+
+function renderMr() {
+  if (!mr.data) return;
+  for (const b of $("mrTabs").children) b.setAttribute("aria-pressed", b.dataset.tab === mr.tab);
+  $("mrInventory").classList.toggle("hidden", mr.tab !== "inventory");
+  $("mrDepot").classList.toggle("hidden", mr.tab !== "depot");
+  $("mrTitle").textContent = mr.tab === "depot" ? "Depot Report" : "Current Inventory";
+  const synced = mr.data.lastSync ? new Date(mr.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
+  $("mrSub").textContent = `Latest movement per tank · movements up to ${mr.data.dataTo ? shortDate(mr.data.dataTo) : "—"} · synced ${synced}`;
+  if (mr.tab === "depot") renderDepot(); else renderInventory();
+}
+
+// ---- Current Inventory
+function renderInventory() {
+  const tanks = mrTanks(), total = tanks.length;
+  const by = Object.fromEntries(MR_BUCKETS.map((b) => [b, 0]));
+  for (const t of tanks) by[t.bucket]++;
+  const avail = tanks.filter((t) => t.activity === "EMPTY AVAILABLE").length, alloc = tanks.filter((t) => t.activity === "EMPTY ALLOCATED TO SHIPPER").length;
+  const offHire = tanks.filter((t) => t.activity === "OFF HIRE").length;
+  const pct = (v) => (total ? `${(v / total * 100).toFixed(1)}% of tanks` : "");
+  const card = (key, label, value, note, color) => `<button class="kpi" data-bucket="${key}" style="border-top-color:${color}">
+      <div class="lbl">${label}</div><div class="val">${n0(value)}</div><div class="note muted">${note}</div></button>`;
+  $("mrKpis").innerHTML = card("", "Total Tanks", total, mr.principal ? esc(mr.principal) : "All principals", "#1E3A8A")
+    + MR_BUCKETS.map((b) => card(b, MR_LABEL[b] || b, by[b],
+        b === "Empty" ? `${n0(avail)} available · ${n0(alloc)} allocated` : b === "Other" && offHire ? `${n0(offHire)} off hire · ${pct(by[b])}` : pct(by[b]),
+        MR_COLORS[b])).join("");
+
+  // agents (top 10)
+  const agents = [...tanks.reduce((m, t) => m.set(t.agent, (m.get(t.agent) || 0) + 1), new Map())].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  charts.mrAgent?.destroy();
+  charts.mrAgent = new Chart($("mrAgentChart"), {
+    type: "bar",
+    data: { labels: agents.map((a) => a[0]), datasets: [{ data: agents.map((a) => a[1]), backgroundColor: "#2563eb", borderRadius: 4, maxBarThickness: 26 }] },
+    options: {
+      indexAxis: "y", maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${n0(c.raw)} tanks (${(c.raw / total * 100).toFixed(1)}%)` } } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#e2e8f0" } },
+                y: { afterFit: (ax) => { ax.width = Math.max(ax.width, 240); }, ticks: { callback: (_, i) => trunc(agents[i]?.[0] || "", 34), color: "#334155", font: { size: 11 } }, grid: { display: false } } },
+      onClick: (_, els) => { if (els[0]) openTanks({ title: `Agent: ${agents[els[0].index][0]}`, agent: agents[els[0].index][0] }); },
+      onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+    },
+  });
+
+  // principals
+  const principals = [...tanks.reduce((m, t) => m.set(t.principal, (m.get(t.principal) || 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
+  const pColor = (i) => PRINCIPAL_COLORS[i % PRINCIPAL_COLORS.length];
+  charts.mrPrincipal?.destroy();
+  charts.mrPrincipal = new Chart($("mrPrincipalChart"), {
+    type: "doughnut",
+    data: { labels: principals.map((p) => p[0]), datasets: [{ data: principals.map((p) => p[1]), backgroundColor: principals.map((_, i) => pColor(i)), borderWidth: 1 }] },
+    options: {
+      maintainAspectRatio: false, cutout: "58%", animation: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${principals[c.dataIndex][0]}: ${n0(c.raw)} tanks (${(c.raw / total * 100).toFixed(1)}%)` } } },
+      onClick: (_, els) => { if (els[0]) { const p = principals[els[0].index][0]; openTanks({ title: `Principal: ${p}`, principal: p }); } },
+      onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+    },
+  });
+  $("mrPrincipalLegend").innerHTML = principals.map((p, i) =>
+    `<button data-p="${esc(p[0])}"><span class="dot" style="background:${pColor(i)}"></span>${esc(p[0])} · ${n0(p[1])} (${(p[1] / total * 100).toFixed(0)}%)</button>`).join("")
+    || '<span class="foot">No tanks</span>';
+
+  renderMrPivot(tanks);
+}
+$("mrKpis").onclick = (e) => {
+  const b = e.target.closest(".kpi"); if (!b) return;
+  const k = b.dataset.bucket;
+  openTanks(k ? { title: MR_LABEL[k] || k, bucket: k } : { title: "All tanks" });
+};
+$("mrPrincipalLegend").onclick = (e) => { const p = e.target.closest("button")?.dataset.p; if (p) openTanks({ title: `Principal: ${p}`, principal: p }); };
+
+function mrPivotRows(tanks) {
+  const m = new Map();
+  for (const t of tanks) {
+    let p = m.get(t.principal); if (!p) m.set(t.principal, p = { name: t.principal, n: 0, acts: new Map() });
+    p.n++; p.acts.set(t.activity, (p.acts.get(t.activity) || 0) + 1);
+  }
+  return [...m.values()].sort((a, b) => b.n - a.n).map((p) => ({ ...p, acts: [...p.acts].sort((a, b) => b[1] - a[1]) }));
+}
+function renderMrPivot(tanks) {
+  const rows = mrPivotRows(tanks), total = tanks.length;
+  const pct = (v) => (total ? v / total * 100 : 0);
+  const pc = (v) => `<span class="pct-bar"><i style="width:${Math.min(100, pct(v)).toFixed(1)}%"></i></span>${pct(v).toFixed(1)}%`;
+  const num = (v, attrs) => `<button class="num" ${attrs}>${n0(v)}</button>`;
+  let body = "";
+  for (const p of rows) {
+    const open = mr.open.has(p.name);
+    body += `<tr class="lv0"><td><button class="tg" data-tg="${esc(p.name)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(p.name)}</td>
+      <td>${num(p.n, `data-p="${esc(p.name)}"`)}</td><td>${pc(p.n)}</td></tr>`;
+    if (open) for (const [a, v] of p.acts) {
+      const b = (mr.data.tanks.find((t) => t.activity === a) || {}).bucket || "Other";
+      body += `<tr class="lv1"><td><span class="dot" style="background:${MR_COLORS[b]}"></span> ${esc(a)}</td>
+        <td>${num(v, `data-p="${esc(p.name)}" data-a="${esc(a)}"`)}</td><td>${pc(v)}</td></tr>`;
+    }
+  }
+  $("mrPivot").innerHTML = `<thead><tr><th>Principal / Activity</th><th>Tanks</th><th>% of Total</th></tr></thead><tbody>${body
+    || '<tr><td colspan="3" style="text-align:center;padding:30px;color:#94a3b8">No tanks</td></tr>'}</tbody>
+    <tfoot><tr><td>GRAND TOTAL</td><td>${num(total, 'data-all="1"')}</td><td>${total ? "100.0%" : "–"}</td></tr></tfoot>`;
+}
+$("mrPivot").onclick = (e) => {
+  const tg = e.target.closest("[data-tg]");
+  if (tg) { const k = tg.dataset.tg; mr.open.has(k) ? mr.open.delete(k) : mr.open.add(k); return renderMrPivot(mrTanks()); }
+  const b = e.target.closest("button.num"); if (!b) return;
+  if (b.dataset.all) return openTanks({ title: "All tanks" });
+  openTanks({ title: [b.dataset.p, b.dataset.a].filter(Boolean).join(" › "), principal: b.dataset.p, activity: b.dataset.a });
+};
+$("mrExpand").onclick = () => { for (const r of mrPivotRows(mrTanks())) mr.open.add(r.name); renderMrPivot(mrTanks()); };
+$("mrCollapse").onclick = () => { mr.open.clear(); renderMrPivot(mrTanks()); };
+$("mrPivotXlsx").onclick = () => {
+  const tanks = mrTanks(), total = tanks.length, rows = [];
+  for (const p of mrPivotRows(tanks)) {
+    rows.push({ Principal: p.name, Activity: "(all)", Tanks: p.n, "% of Total": total ? +(p.n / total * 100).toFixed(2) : 0 });
+    for (const [a, v] of p.acts) rows.push({ Principal: p.name, Activity: a, Tanks: v, "% of Total": total ? +(v / total * 100).toFixed(2) : 0 });
+  }
+  rows.push({ Principal: "GRAND TOTAL", Activity: "", Tanks: total, "% of Total": total ? 100 : 0 });
+  writeXlsx(`SAR_Principal_Activity_${todayIso()}.xlsx`, [["Principal → Activity", rows, [34, 40, 10, 12]]]);
+};
+
+// ---- Depot Report: tanks at a depot (empty allocated / available, cleaning, repair, survey)
+const DEPOT_COLS = [["alloc", "Allocated"], ["clean", "Under Cleaning"], ["repair", "Under Repair"], ["survey", "Under Survey"],
+                    ["a30", "Available (≤30)"], ["a60", "Available (31-60)"], ["a90", "Available (61-90)"], ["a91", "Available (>90)"]];
+function depotCol(t) {
+  if (t.bucket === "Under Cleaning") return "clean";
+  if (t.bucket === "Under Repair") return "repair";
+  if (t.bucket === "Under Survey") return "survey";
+  if (t.bucket !== "Empty") return null;
+  if (t.activity.includes("ALLOCATED")) return "alloc";
+  const d = idleDays(t) ?? 0;
+  return d <= 30 ? "a30" : d <= 60 ? "a60" : d <= 90 ? "a90" : "a91";
+}
+function depotRows() {
+  const m = new Map();
+  for (const t of mrTanks()) {
+    const col = depotCol(t); if (!col) continue;
+    const depot = t.to || "(No location)", key = [depot, t.agent, t.principal].join("\u0001");
+    let r = m.get(key);
+    if (!r) m.set(key, r = { depot, agent: t.agent, principal: t.principal, total: 0, over45: 0, ...Object.fromEntries(DEPOT_COLS.map(([k]) => [k, 0])) });
+    r[col]++; r.total++; if ((idleDays(t) ?? 0) > 45) r.over45++;
+  }
+  const q = mr.depotQ.toLowerCase();
+  const rows = [...m.values()].filter((r) => !q || [r.depot, r.agent, r.principal].some((v) => v.toLowerCase().includes(q)));
+  const depotTotal = rows.reduce((a, r) => a.set(r.depot, (a.get(r.depot) || 0) + r.total), new Map());
+  return rows.sort((a, b) => depotTotal.get(b.depot) - depotTotal.get(a.depot) || a.depot.localeCompare(b.depot) || b.total - a.total);
+}
+function sumRows(rows, label) {
+  const o = { depot: label, agent: "", principal: "", total: 0, over45: 0 };
+  for (const [k] of DEPOT_COLS) o[k] = 0;
+  for (const r of rows) { for (const [k] of DEPOT_COLS) o[k] += r[k]; o.total += r.total; o.over45 += r.over45; }
+  return o;
+}
+function renderDepot() {
+  const rows = depotRows(), grand = sumRows(rows, "GRAND TOTAL");
+  const depots = new Set(rows.map((r) => r.depot)).size;
+  $("mrDepotSub").textContent = `${n0(grand.total)} tanks at ${n0(depots)} depots (to-location of the latest movement) · Available aged by days since the last movement`;
+  const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : '<span class="dash">–</span>'}</td>`;
+  const line = (r, cls, sub) => {
+    const base = sub ? `data-d="${esc(r.depot)}"` : `data-d="${esc(r.depot)}" data-ag="${esc(r.agent)}" data-p="${esc(r.principal)}"`;
+    return `<tr class="${cls}"><td title="${esc(r.depot)}">${esc(sub ? `${r.depot} — TOTAL` : r.depot)}</td><td title="${esc(r.agent)}">${esc(r.agent)}</td><td title="${esc(r.principal)}">${esc(r.principal)}</td>`
+      + DEPOT_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`)).join("")
+      + cell(r.total, base, "rt") + cell(r.over45, `${base} data-c="over45"`, r.over45 ? "warn" : "") + "</tr>";
+  };
+  let body = "", i = 0;
+  while (i < rows.length) {
+    const d = rows[i].depot, group = [];
+    while (i < rows.length && rows[i].depot === d) group.push(rows[i++]);
+    body += group.map((r) => line(r, "")).join("");
+    if (group.length > 1) body += line(sumRows(group, d), "sub", true);
+  }
+  $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th>Principal</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}<th class="rt">Row Total</th><th>&gt; 45 Days</th></tr></thead>
+    <tbody>${body || '<tr><td colspan="13" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
+    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}<td>${n0(grand.total)}</td><td>${n0(grand.over45)}</td></tr></tfoot>`;
+}
+$("mrDepotSearch").oninput = (e) => { mr.depotQ = e.target.value; renderDepot(); };
+$("mrDepotTable").onclick = (e) => {
+  const b = e.target.closest("button.num"); if (!b) return;
+  const { d, ag, p, c } = b.dataset;
+  const label = c === "over45" ? "> 45 days" : (DEPOT_COLS.find(([k]) => k === c) || [])[1] || "All";
+  openTanks({ title: [d, ag, label].filter(Boolean).join(" › "), depot: d, agent: ag, principal: p, depotCol: c || "any" });
+};
+$("mrDepotXlsx").onclick = () => {
+  const rows = depotRows(), out = [];
+  const conv = (r) => ({ "Depot Name": r.depot, "Depot Agent": r.agent, Principal: r.principal,
+    ...Object.fromEntries(DEPOT_COLS.map(([k, l]) => [l, r[k]])), "Row Total": r.total, "Containers > 45 Days": r.over45 });
+  let i = 0;
+  while (i < rows.length) {
+    const d = rows[i].depot, group = [];
+    while (i < rows.length && rows[i].depot === d) group.push(rows[i++]);
+    out.push(...group.map(conv));
+    if (group.length > 1) out.push(conv({ ...sumRows(group, `${d} — TOTAL`) }));
+  }
+  out.push(conv(sumRows(rows, "GRAND TOTAL")));
+  writeXlsx(`SAR_Depot_Report_${todayIso()}.xlsx`, [["Depot Report", out, [30, 34, 30, 10, 14, 12, 12, 14, 16, 16, 14, 10, 18]]]);
+};
+
+// ---- tank list pop-up
+function tankMatches(t, f) {
+  if (f.bucket && t.bucket !== f.bucket) return false;
+  if (f.principal && t.principal !== f.principal) return false;
+  if (f.activity && t.activity !== f.activity) return false;
+  if (f.agent && t.agent !== f.agent) return false;
+  if (f.depot != null && (t.to || "(No location)") !== f.depot) return false;
+  if (f.depotCol) {
+    const col = depotCol(t); if (!col) return false;
+    if (f.depotCol === "over45") return (idleDays(t) ?? 0) > 45;
+    if (f.depotCol !== "any" && col !== f.depotCol) return false;
+  }
+  return true;
+}
+function openTanks(f) {
+  mr.drill = f; mr.drillQ = ""; $("tSearch").value = "";
+  $("mrOverlay").classList.remove("hidden"); renderTanks(); $("tSearch").focus();
+}
+function tankRows() {
+  const q = mr.drillQ.toLowerCase();
+  return mrTanks().filter((t) => tankMatches(t, mr.drill))
+    .filter((t) => !q || [t.c, t.type, t.principal, t.activity, t.agent, t.from, t.to, t.jobNo, t.importBl, t.exportBl].some((v) => (v || "").toLowerCase().includes(q)))
+    .sort((a, b) => (idleDays(b) ?? -1) - (idleDays(a) ?? -1) || a.c.localeCompare(b.c));
+}
+function renderTanks() {
+  const rows = tankRows();
+  $("tTitle").textContent = mr.drill.title + (mr.principal && !mr.drill.principal ? ` · ${mr.principal}` : "");
+  const idle = rows.map(idleDays).filter((d) => d != null);
+  $("tSub").textContent = `${n0(rows.length)} tanks${idle.length ? ` · average ${Math.round(idle.reduce((a, b) => a + b, 0) / idle.length)} idle days` : ""} · longest idle first`;
+  const dash = '<span class="dash">—</span>', txt = (v) => (v ? esc(v) : dash);
+  $("tTable").innerHTML = `<thead><tr><th>Container</th><th>Size / Type</th><th>Principal</th><th>Activity</th><th>Activity Date</th><th class="amt">Idle Days</th><th>Agent</th><th>From</th><th>To</th><th>Job / BL</th></tr></thead><tbody>`
+    + (rows.slice(0, 1500).map((t) => { const d = idleDays(t); return `<tr><td class="mono">${esc(t.c)}</td><td>${esc([t.size, t.type].filter(Boolean).join(" "))}</td>
+        <td class="name" title="${esc(t.principal)}">${esc(t.principal)}</td>
+        <td><span class="bucket-pill" style="background:${MR_COLORS[t.bucket]}1F;color:${MR_COLORS[t.bucket]}">${esc(t.activity)}</span></td>
+        <td>${t.date ? shortDate(t.date) : dash}</td><td class="amt mono${d > 45 ? " idle-hi" : ""}">${d ?? "—"}</td>
+        <td class="name" title="${esc(t.agent)}">${esc(t.agent)}</td><td class="name" title="${esc(t.from)}">${txt(t.from)}</td><td class="name" title="${esc(t.to)}">${txt(t.to)}</td>
+        <td class="mono">${txt(t.exportBl || t.importBl || t.jobNo)}</td></tr>`; }).join("")
+      || '<tr><td colspan="10" style="text-align:center;padding:30px;color:#94a3b8">No matching tanks</td></tr>') + "</tbody>";
+}
+function closeTanks() { $("mrOverlay").classList.add("hidden"); mr.drill = null; }
+$("tSearch").oninput = (e) => { mr.drillQ = e.target.value; renderTanks(); };
+$("tClose").onclick = closeTanks;
+$("mrOverlay").onclick = (e) => { if (e.target === $("mrOverlay")) closeTanks(); };
+$("tXlsx").onclick = () => {
+  const rows = tankRows().map((t) => ({ Container: t.c, Size: t.size, Type: t.type, Principal: t.principal, Lessor: t.lessor, Activity: t.activity, Status: MR_LABEL[t.bucket] || t.bucket,
+    "Activity Date": t.date ? new Date(t.date + "T00:00") : "", "Idle Days": idleDays(t) ?? "", Agent: t.agent, "Agent Branch": t.agentBranch, From: t.from, To: t.to,
+    Vessel: t.vessel, Voyage: t.voyage, "Job No": t.jobNo, "Import BL": t.importBl, "Export BL": t.exportBl }));
+  writeXlsx(`${mr.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`,
+    [["Tanks", rows, [14, 6, 10, 30, 24, 30, 16, 13, 10, 34, 34, 22, 22, 18, 12, 16, 20, 20], 7]]);
+};
+
+// ---- Excel helper: sheets = [[name, rows, column widths, date column index?]]
+const todayIso = () => new Date().toISOString().slice(0, 10);
+function writeXlsx(file, sheets) {
+  if (!window.XLSX) { alert("The Excel library is still loading — try again in a moment."); return; }
+  const wb = XLSX.utils.book_new();
+  for (const [name, rows, widths, dateCol] of sheets) {
+    const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true });
+    if (widths) ws["!cols"] = widths.map((wch) => ({ wch }));
+    if (dateCol != null) for (let r = 1; r <= rows.length; r++) { const c = ws[XLSX.utils.encode_cell({ r, c: dateCol })]; if (c?.t === "d") c.z = "dd-mmm-yyyy"; }
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  }
+  XLSX.writeFile(wb, file, { cellDates: true });
+}
 
 // ============================================================ admin panel: users (layout follows the reference dashboard)
 const ROLE_GROUPS = [["admin", "Admin"], ["viewer", "Viewer"]];

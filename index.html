@@ -16,15 +16,46 @@
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   button { font: inherit; cursor: pointer; }
   .hidden { display: none !important; }
-  header { background: var(--card); border-bottom: 1px solid var(--border); }
-  .bar { max-width: 1600px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 16px; }
-  .brand { font-weight: 600; font-size: 15px; }
-  .nav a { padding: 6px 12px; border-radius: 6px; background: var(--soft); color: var(--text); text-decoration: none; font-weight: 500; }
-  .user { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--muted); }
-  .badge { background: #eff6ff; color: #1d4ed8; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
+  /* layout: blue sidebar + content */
+  .layout { display: flex; min-height: 100vh; }
+  .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .side { width: 260px; flex: none; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column;
+          background: linear-gradient(180deg, #1f4290 0%, #1b3a80 55%, #15306c 100%); color: #dbe5ff; overflow-y: auto; }
+  .logo { padding: 24px 24px 0; color: #fff; }
+  .logo .mark { font: 700 34px/1 Georgia, "Times New Roman", serif; letter-spacing: -.03em; }
+  .logo .tag { margin-top: 3px; font-size: 10px; color: #c7d4f5; letter-spacing: .02em; }
+  .who { margin: 0 24px; padding: 18px 0 18px; border-bottom: 1px solid rgb(255 255 255 / .14);
+         font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #c7d4f5; }
+  .side h4 { margin: 22px 24px 8px; font-size: 11px; font-weight: 600; letter-spacing: .14em; color: #9fb3e6; }
+  .side nav a { display: flex; align-items: center; gap: 12px; margin: 2px 14px; padding: 10px 12px; border-radius: 10px;
+                color: #dbe5ff; text-decoration: none; font-size: 15px; font-weight: 500; }
+  .side nav a svg { width: 19px; height: 19px; flex: none; }
+  .side nav a:hover { background: rgb(255 255 255 / .08); color: #fff; }
+  .side nav a[aria-current="page"] { background: rgb(255 255 255 / .17); color: #fff; font-weight: 600; }
+  .side .bottom { margin-top: auto; padding: 14px 18px 16px; border-top: 1px solid rgb(255 255 255 / .12); background: rgb(0 0 0 / .14); }
+  .me { display: flex; align-items: center; gap: 10px; }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex: none;
+            background: #7c4a3a; color: #fff; font-weight: 600; font-size: 16px; }
+  .me .name { color: #fff; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .live { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
+          background: rgb(34 197 94 / .16); color: #4ade80; font-size: 12px; font-weight: 600; }
+  .live::before, .synced::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+  .synced { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 12px; color: #b6c4ea; }
+  .topbar { position: sticky; top: 0; z-index: 20; height: 60px; display: flex; align-items: center; gap: 12px; padding: 0 20px;
+            background: #fff; border-bottom: 1px solid var(--border); }
+  .topbar h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  .topbar .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .btn-primary { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 999px; padding: 8px 18px;
+                 background: linear-gradient(180deg, #3b6fd8, #2a56b8); color: #fff; font-weight: 600; box-shadow: 0 2px 6px rgb(37 99 235 / .3); }
+  .btn-primary:disabled { opacity: .6; cursor: progress; }
+  .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid #cbd5e1; border-radius: 50%; background: #fff; color: #334155; }
+  .icon-btn:hover { background: var(--soft); }
+  .icon-btn svg, .btn-primary svg { width: 17px; height: 17px; }
+  .menu-btn { display: none; }
+  .backdrop { position: fixed; inset: 0; background: rgb(15 23 42 / .45); z-index: 55; }
   .btn { border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: 5px 10px; color: #334155; }
   .btn:hover { background: var(--soft); }
-  main { max-width: 1600px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  main { width: 100%; max-width: 1600px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 1px 2px rgb(0 0 0 / .04); }
   .panel { padding: 16px; min-width: 0; }
   .panel h2 { margin: 0; font-size: 14px; }
@@ -39,7 +70,8 @@
 
   /* filters */
   .filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 12px; }
-  .seg { display: flex; background: var(--soft); border-radius: 8px; padding: 3px; }
+  .seg { display: flex; max-width: 100%; overflow-x: auto; background: var(--soft); border-radius: 8px; padding: 3px; }
+  .seg button { white-space: nowrap; flex: none; }
   .seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 6px; color: #475569; font-weight: 500; }
   .seg button[aria-pressed="true"] { background: #fff; color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
   label.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 500; }
@@ -96,20 +128,50 @@
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 
   @media (max-width: 1200px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .row, .row.rev { grid-template-columns: 1fr; } }
-  @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .push { margin-left: 0; } .user .email { display: none; } .search { width: 100%; } }
+  @media (max-width: 900px) {
+    .side { position: fixed; left: 0; top: 0; z-index: 60; transform: translateX(-100%); transition: transform .2s ease; }
+    .side.open { transform: none; box-shadow: 0 0 40px rgb(0 0 0 / .3); }
+    .menu-btn { display: grid; }
+    main { padding: 16px; }
+  }
+  @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .push { margin-left: 0; width: 100%; } .search { width: 100%; } .filters .seg#views { width: 100%; } .btn-primary span { display: none; } .btn-primary { padding: 8px 12px; } }
 </style>
 </head>
 <body>
-<header>
-  <div class="bar">
-    <div class="brand">SAR ISO Tank SG</div>
-    <nav class="nav hidden" id="nav"><a href="#">Sales Performance</a></nav>
-    <div class="user hidden" id="user">
-      <span class="email" id="userEmail"></span><span class="badge hidden" id="userRole">admin</span>
-      <button class="btn" id="signOut">Sign out</button>
-    </div>
+<div class="layout">
+<aside class="side hidden" id="side" aria-label="Main menu">
+  <div class="logo"><div class="mark">SAR</div><div class="tag">Connecting Continents · ISO Tank SG</div></div>
+  <div class="who" id="who"></div>
+  <h4>REPORTS</h4>
+  <nav id="sideNav">
+    <a href="#sales" data-page="sales">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      Sales Performance
+    </a>
+  </nav>
+  <div class="bottom">
+    <div class="me"><div class="avatar" id="avatar"></div><div class="name" id="meName"></div><span class="live">Live</span></div>
+    <div class="synced" id="synced">Loading…</div>
   </div>
-</header>
+</aside>
+<div class="backdrop hidden" id="backdrop"></div>
+
+<div class="content">
+<div class="topbar hidden" id="topbar">
+  <button class="icon-btn menu-btn" id="menuBtn" aria-label="Open menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+  <h1 id="pageTitle">Sales Performance</h1>
+  <div class="right">
+    <button class="btn-primary" id="refreshBtn" title="Reload data">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>
+      <span>Refresh</span>
+    </button>
+    <button class="icon-btn" id="signOut" title="Sign out" aria-label="Sign out">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+    </button>
+  </div>
+</div>
 
 <section id="login" class="hidden">
   <div class="card">
@@ -159,6 +221,8 @@
 
   <p class="foot" id="footnote"></p>
 </main>
+</div>
+</div>
 
 <div class="overlay hidden" id="overlay">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
@@ -291,7 +355,8 @@ function getToken() { const t = sessionStorage.getItem(TOKEN_KEY); return t && t
 
 function showLogin(message) {
   sessionStorage.removeItem(TOKEN_KEY);
-  $("app").classList.add("hidden"); $("nav").classList.add("hidden"); $("user").classList.add("hidden");
+  for (const id of ["app", "side", "topbar", "backdrop"]) $(id).classList.add("hidden");
+  $("side").classList.remove("open");
   $("login").classList.remove("hidden");
   $("loginError").textContent = message || ""; $("loginError").classList.toggle("hidden", !message);
   if (!googleClientId) { $("loginError").textContent = "Sign-in isn't configured on the server (GOOGLE_CLIENT_ID)."; $("loginError").classList.remove("hidden"); return; }
@@ -322,28 +387,70 @@ async function api(path, body) {
 
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
+// ============================================================ sidebar + pages
+const PAGES = { sales: "Sales Performance" };
+function route() {
+  const page = PAGES[location.hash.slice(1)] ? location.hash.slice(1) : "sales";
+  for (const a of $("sideNav").querySelectorAll("a")) {
+    if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  }
+  $("pageTitle").textContent = PAGES[page];
+  document.title = `${PAGES[page]} · SAR ISO Tank SG`;
+  $("app").classList.toggle("hidden", page !== "sales");
+  closeMenu();
+}
+window.addEventListener("hashchange", route);
+function openMenu() { $("side").classList.add("open"); $("backdrop").classList.remove("hidden"); }
+function closeMenu() { $("side").classList.remove("open"); $("backdrop").classList.add("hidden"); }
+$("menuBtn").onclick = openMenu;
+$("backdrop").onclick = closeMenu;
+$("sideNav").onclick = (e) => { if (e.target.closest("a")) closeMenu(); };
+
+function showUser(me) {
+  const name = me.name || me.email;
+  $("who").textContent = `${name} · ${me.role}`;
+  $("meName").textContent = name; $("meName").title = me.email;
+  $("avatar").textContent = (name.trim()[0] || "?").toUpperCase();
+}
+function showSynced() {
+  const when = state.lastSync
+    ? new Date(state.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+    : "never";
+  $("synced").textContent = `Synced ${when} · ${state.lines.length.toLocaleString("en-IN")} records`;
+}
+
 // ============================================================ loading
 async function start() {
   $("login").classList.add("hidden");
-  $("app").classList.remove("hidden"); $("nav").classList.remove("hidden");
-  $("kpis").innerHTML = '<div class="skel"></div>'.repeat(5);
+  for (const id of ["side", "topbar"]) $(id).classList.remove("hidden");
+  route();
+  renderFilters();
+  await loadData(true);
+}
+
+async function loadData(withUser) {
+  $("refreshBtn").disabled = true;
+  if (!state.lines.length) $("kpis").innerHTML = '<div class="skel"></div>'.repeat(5);
   try {
-    const { results } = await api("/api/mongo-batch", { requests: [{ dataset: "me" }, { dataset: "sales" }] });
-    const [me, sales] = results;
-    if (!me.ok) throw new Error(me.error);
+    const requests = withUser ? [{ dataset: "sales" }, { dataset: "me" }] : [{ dataset: "sales" }];
+    const { results } = await api("/api/mongo-batch", { requests });
+    const [sales, me] = results;
+    if (me && !me.ok) throw new Error(me.error);
     if (!sales.ok) throw new Error(sales.error);
-    $("user").classList.remove("hidden");
-    $("userEmail").textContent = me.data.email;
-    $("userRole").classList.toggle("hidden", me.data.role !== "admin");
+    if (me) showUser(me.data);
     state.lines = sales.data.lines; state.lastSync = sales.data.lastSync;
     $("dataError").classList.add("hidden");
+    showSynced();
     render();
   } catch (e) {
     if (e.message === "signed out" || e.message === "no access") return;
-    $("kpis").innerHTML = "";
+    if (!state.lines.length) $("kpis").innerHTML = "";
     $("dataError").textContent = "Could not load sales data: " + e.message; $("dataError").classList.remove("hidden");
+  } finally {
+    $("refreshBtn").disabled = false;
   }
 }
+$("refreshBtn").onclick = () => loadData(false);
 
 // ============================================================ filter bar
 $("views").innerHTML = VIEWS.map(([v, l]) => `<button data-v="${v}">${l}</button>`).join("");
@@ -398,7 +505,7 @@ function render() {
   }).join("");
 
   renderBar("laneChart", topBy(lines, (l) => l.lane), (name) => openDrill({ title: `Trade Lane: ${name}`, lane: name }));
-  renderBar("agentChart", topBy(lines, (l) => l.agent), (name) => openDrill({ title: `Agent: ${name}`, agent: name }), 24);
+  renderBar("agentChart", topBy(lines, (l) => l.agent), (name) => openDrill({ title: `Agent: ${name}`, agent: name }), 20);
   renderMix(k.byCat);
   renderTrend(lines);
   renderTable();
@@ -422,7 +529,7 @@ function renderBar(id, data, onClick, maxLabel = 30) {
       indexAxis: "y", maintainAspectRatio: false, animation: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(data[c.dataIndex].value) } } },
       scales: { x: { ticks: { callback: (v) => moneyShort(state.currency === "INR" ? v / state.rate : v) }, grid: { color: "#e2e8f0" } },
-                y: { afterFit: (ax) => { ax.width = Math.max(ax.width, maxLabel * 6.6); }, ticks: { callback: (_, i) => trunc(data[i]?.name || "", maxLabel), color: "#334155", font: { size: 11 } }, grid: { display: false } } },
+                y: { afterFit: (ax) => { ax.width = Math.max(ax.width, maxLabel * 7 + 10); }, ticks: { callback: (_, i) => trunc(data[i]?.name || "", maxLabel), color: "#334155", font: { size: 11 } }, grid: { display: false } } },
       onClick: (_, els) => { if (els[0]) onClick(data[els[0].index].name); },
       onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
     },

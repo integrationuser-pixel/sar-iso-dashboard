@@ -130,14 +130,20 @@
   .pivot { font-size: 12.5px; }
   .pivot th { background: #e8eefb; color: #1e3a8a; text-transform: none; font-size: 12px; font-weight: 600; border-bottom: 1px solid #c7d4f5; }
   .pivot thead tr:first-child th { top: 0; } .pivot thead tr:nth-child(2) th { top: 31px; }
-  .pivot th.dim { text-align: left; white-space: nowrap; }
-  .pivot td.dim { text-align: left; position: static; white-space: nowrap; }
-  .pivot td.dim { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+  .pivot th.tree { text-align: left; left: 0; z-index: 3; min-width: 380px; }
+  .pivot td.tree { text-align: left; position: sticky; left: 0; z-index: 1; background: inherit; white-space: nowrap;
+                   max-width: 460px; overflow: hidden; text-overflow: ellipsis; box-shadow: 1px 0 0 #e2e8f0; }
+  .pivot tbody tr { background: #fff; } .pivot tbody tr:hover { background: #f5f8ff; }
+  .lvl { display: inline-block; min-width: 48px; margin-right: 8px; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700;
+         letter-spacing: .04em; text-transform: uppercase; text-align: center; vertical-align: 1px; }
+  .lvl1 { background: #eef2ff; color: #4338ca; } .lvl2 { background: #ecfdf5; color: #047857; }
+  .lvl3 { background: #fff7ed; color: #c2410c; } .lvl4 { background: #fdf2f8; color: #be185d; }
   .pivot th.mtot, .pivot td.mtot { background: #f1f5fd; }
   .pivot th.gt, .pivot td.gt { background: #e8eefb; font-weight: 700; }
-  .pivot tr.lv0 td { font-weight: 600; } .pivot tr.lv0 { background: #fafbff; }
+  .pivot tr.lv0 td { font-weight: 600; } .pivot tbody tr.lv0 { background: #f6f8fe; }
   .pivot tr.lv0:not(:first-child) td { border-top: 1px solid #dbe3f5; }
   .pivot tfoot td { background: #e8eefb; font-weight: 700; }
+  .pivot tfoot td.tree { background: #e8eefb; z-index: 2; }
   .tg { width: 16px; height: 16px; padding: 0; margin-right: 6px; border: 1px solid #93a8d8; border-radius: 3px; background: #fff;
         color: #1e3a8a; font: 600 12px/14px ui-monospace, monospace; vertical-align: -2px; }
   .tg:hover { background: #e8eefb; }
@@ -735,11 +741,7 @@ function renderPivot() {
   const sorted = (n) => [...n.children.values()].sort((a, b) => b.total - a.total);
   const walk = (n) => { for (const c of sorted(n)) { pivotRows.push(c); if (state.pivotOpen.has(c.path) && c.level < PIVOT_LEVELS.length - 1) walk(c); } };
   walk(root);
-  const nDims = Math.max(1, ...pivotRows.map((n) => n.level + 1));   // only levels that are expanded somewhere
-  const dims = PIVOT_LEVELS.slice(0, nDims);
-
-  const DIM_W = [240, 220, 220, 110, 110];
-  let head1 = dims.map(([, label], i) => `<th class="dim" rowspan="2" style="min-width:${DIM_W[i]}px">${label}</th>`).join("");
+  let head1 = `<th class="tree" rowspan="2">${PIVOT_LEVELS.map(([, label]) => label.replace(" Name", "")).join(" › ")}</th>`;
   let head2 = "";
   for (const { m, weeks } of months) {
     const open = state.monthsOpen.has(m);
@@ -761,15 +763,15 @@ function renderPivot() {
     const leaf = n.level === PIVOT_LEVELS.length - 1, open = state.pivotOpen.has(n.path);
     const label = n.name ? esc(n.name) : '<span class="blank">(blank)</span>';
     const tg = leaf ? "" : `<button class="tg" data-row="${i}" aria-label="${open ? "Collapse" : "Expand"}">${open ? "−" : "+"}</button>`;
-    const cells = dims.map((_, li) => (li === n.level
-      ? `<td class="dim" title="${esc(n.name)}">${tg}${label}${leaf || open ? "" : " Total"}</td>` : '<td class="dim"></td>')).join("");
-    return `<tr class="lv${n.level}">${cells}${pivotCols.map((c, ci) => val(c.grand ? n.total : n.cells[c.key], i, ci)).join("")}</tr>`;
+    const tag = n.level ? `<span class="lvl lvl${n.level}">${PIVOT_LEVELS[n.level][1].replace(" Name", "")}</span>` : "";
+    const cell = `<td class="tree" title="${esc(n.name)}" style="padding-left:${10 + n.level * 26}px">${tg || '<span class="tg-sp"></span>'}${tag}${label}</td>`;
+    return `<tr class="lv${n.level}">${cell}${pivotCols.map((c, ci) => val(c.grand ? n.total : n.cells[c.key], i, ci)).join("")}</tr>`;
   }).join("");
   pivotRows.push(root);
-  const foot = `<tr><td class="dim" colspan="${nDims}">Grand Total</td>${pivotCols.map((c, ci) => val(c.grand ? root.total : root.cells[c.key], pivotRows.length - 1, ci)).join("")}</tr>`;
+  const foot = `<tr><td class="tree">Grand Total</td>${pivotCols.map((c, ci) => val(c.grand ? root.total : root.cells[c.key], pivotRows.length - 1, ci)).join("")}</tr>`;
 
   $("detailTable").className = "pivot";
-  $("detailTable").innerHTML = `<thead><tr>${head1}</tr>${head2 ? `<tr>${head2}</tr>` : ""}</thead><tbody>${body || `<tr><td colspan="${nDims + pivotCols.length}" style="text-align:center;padding:24px;color:#94a3b8">No billing in this period</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
+  $("detailTable").innerHTML = `<thead><tr>${head1}</tr>${head2 ? `<tr>${head2}</tr>` : ""}</thead><tbody>${body || `<tr><td colspan="${1 + pivotCols.length}" style="text-align:center;padding:24px;color:#94a3b8">No billing in this period</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
 }
 
 function pivotColRange(col) {

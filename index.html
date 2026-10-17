@@ -151,7 +151,7 @@
   /* ---------- tables ---------- */
   .tools { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .tbl-wrap { max-height: 560px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
-  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12.5px; }
   th { position: sticky; top: 0; z-index: 1; padding: 10px 14px; background: var(--thead); border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap;
        font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--ink-soft); }
   td { padding: 9px 14px; border-bottom: 1px solid #EEF1F5; text-align: right; white-space: nowrap; font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
@@ -159,7 +159,14 @@
   td:first-child, td.name, td.dim { font-family: "Plus Jakarta Sans", sans-serif; }
   tbody tr { background: #fff; transition: background .12s; }
   tbody tr:hover { background: #EFF4FF; }
-  tfoot td { position: sticky; bottom: 0; background: var(--grand); font-weight: 700; font-size: 13px; border-top: 2px solid #C7DAF3; }
+  tfoot td { position: sticky; bottom: 0; background: var(--grand); font-weight: 700; font-size: 13px; border-top: 2px solid #C7DAF3; border-bottom: 0; }
+  /* Frozen parts, bottom to top: body cells < first column < header / footer < top-left & bottom-left corners */
+  .tbl-wrap thead th { z-index: 3; }
+  .tbl-wrap tbody td:first-child { z-index: 2; box-shadow: inset -1px 0 0 var(--line); }
+  .tbl-wrap tfoot td { z-index: 3; }
+  .tbl-wrap thead th:first-child { left: 0; z-index: 5; background: var(--thead); box-shadow: inset -1px 0 0 var(--line); }
+  .tbl-wrap tfoot td:first-child { left: 0; z-index: 4; background: var(--grand); box-shadow: inset -1px 0 0 var(--line); }
+  .modal thead th:first-child { background: var(--paper); }
   td.name { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
   td .num { border: 0; background: none; padding: 0; color: inherit; font-size: inherit; }
   td .num:hover { color: var(--accent-dark); text-decoration: underline; }
@@ -167,9 +174,9 @@
 
   /* billing details pivot */
   .pivot th { text-transform: uppercase; }
-  .pivot thead tr:first-child th { top: 0; } .pivot thead tr:nth-child(2) th { top: 37px; }
-  .pivot th.dim { text-align: left; z-index: 3; }
-  .pivot td.dim { text-align: left; position: sticky; z-index: 1; background: inherit; overflow: hidden; text-overflow: ellipsis; }
+  .pivot thead tr:first-child th { top: 0; }
+  .pivot th.dim { text-align: left; z-index: 5; background: var(--thead); }
+  .pivot td.dim { text-align: left; position: sticky; z-index: 2; background: inherit; overflow: hidden; text-overflow: ellipsis; }
   .pivot th.dim.last, .pivot td.dim.last { box-shadow: 1px 0 0 var(--line); }
   .pivot th.mtot, .pivot td.mtot { background: #F6F8FC; }
   .pivot th.gt { background: #E4EBFA; color: var(--ink); }
@@ -179,10 +186,16 @@
   .pivot tbody tr.lv1 { background: #FCFDFF; }
   .pivot tr.lv1 td.dim { color: var(--ink-soft); }
   .pivot tbody tr:hover { background: #EFF4FF; }
-  .pivot tfoot td.dim { background: var(--grand); z-index: 2; }
+  .pivot tfoot td.dim { background: var(--grand); z-index: 4; }
   .tg { width: 16px; height: 16px; padding: 0; margin-right: 8px; border: 0; border-radius: 4px; background: var(--grad); color: #fff;
         font: 700 12px/16px "Plus Jakarta Sans", sans-serif; vertical-align: -2px; }
   .tg-sp { display: inline-block; width: 24px; }
+  .charge-link { border: 0; background: none; padding: 0; color: var(--accent-dark); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+  .charge-link:hover { text-decoration: underline; }
+  .sum-table tfoot td { position: sticky; bottom: 0; z-index: 2; background: var(--grand); font-weight: 700; font-size: 12.5px; }
+  .modal thead th { z-index: 3; }
+  .sum-table td.name { max-width: 280px; }
+  .sum-table td:not(.amt), #mTable td:not(.amt):not(.mono) { font-family: "Plus Jakarta Sans", sans-serif; }
   .blank { color: var(--ink-faint); font-style: italic; }
 
   /* charge filter */
@@ -364,7 +377,7 @@
             <div class="ms-list" id="chargeList"></div>
           </div>
         </span>
-        <button class="btn" id="pivotExpand">Expand all</button> <button class="btn" id="pivotCollapse">Collapse all</button>
+        <button class="btn" id="pivotExpand">Show weeks</button> <button class="btn" id="pivotCollapse">Months only</button>
       </span>
       <input class="search" id="detailSearch" placeholder="Search…">
       <span class="foot" id="detailCount"></span>
@@ -395,6 +408,20 @@
   </section>
 </main>
 </div>
+</div>
+
+<div class="overlay hidden" id="sumOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sTitle" style="max-width:1100px">
+    <div class="head">
+      <div><h3 id="sTitle"></h3><div class="foot" id="sSub"></div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="search" id="sSearch" placeholder="Search shipper, party, port…" style="width:230px">
+        <button class="btn" id="sCsv">Export CSV</button>
+        <button class="btn" id="sClose" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="body"><table id="sTable" class="sum-table"></table></div>
+  </div>
 </div>
 
 <div class="overlay hidden" id="overlay">
@@ -526,7 +553,7 @@ const state = {
   from: `${DEFAULT_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
   mode: store.get("sar.salesMode", "table") === "chart" ? "chart" : "table",
   currency: store.get("sar.currency", "USD"), rate: store.get("sar.inrRate", 88),
-  detail: "billing", detailQ: "", detailAll: false, pivotOpen: new Set(), monthsOpen: new Set(),
+  detail: "billing", detailQ: "", detailAll: false, monthsOpen: new Set(),
   charges: new Set(store.get("sar.billingCharges", null) || DEFAULT_CHARGES), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
@@ -847,12 +874,8 @@ $("detailTable").onclick = (e) => {
 // Rows: Charge → Shipper → Party → POL → POD. Columns: month (expandable to WEEKNUM weeks) + grand total.
 const PIVOT_LEVELS = [["charge", "Charge Name"], ["shipper", "Shipper Name"], ["agent", "Party Name"], ["pol", "POL"], ["pod", "POD"]];
 const DETAIL_KEYS = ["shipper", "agent", "pol", "pod"];
-// Label columns are frozen on the left (like freeze panes): fixed widths and running left offsets.
-const DIM_W = [150, 200, 200, 110, 110];
-const DIM_TOTAL = DIM_W.reduce((a, b) => a + b, 0);
-const dimLeft = (i) => DIM_W.slice(0, i).reduce((a, b) => a + b, 0);
-const dimStyle = (i, w = DIM_W[i]) => `left:${dimLeft(i)}px;width:${w}px;min-width:${w}px;max-width:${w}px`;
-const dimLast = (i) => (i === DIM_W.length - 1 ? " last" : "");
+// Charge column is frozen on the left while the month columns scroll.
+const CHARGE_COL = "left:0;width:300px;min-width:300px;max-width:300px";
 function weekNum(s) {   // Google Sheets WEEKNUM (weeks start Sunday, week 1 contains 1 Jan)
   const d = toDate(s), jan1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   return Math.floor((Math.round((d - jan1) / 864e5) + jan1.getUTCDay()) / 7) + 1;
@@ -890,7 +913,7 @@ function renderPivot() {
   renderChargeFilter();
 
   $("detailTitle").textContent = "Billing Details";
-  $("detailSub").textContent = "Sum of amount by charge. Use + on a charge to list it by Shipper, Party, POL and POD, + on a month for weeks; click any number for the invoices.";
+  $("detailSub").textContent = "Sum of amount by charge. Click a charge name for its Shipper, Party, POL and POD breakdown; + on a month shows weeks; click any number for the invoices.";
   $("detailSearch").placeholder = "Search charge, shipper, party, port…";
   $("detailCount").textContent = `${root.children.size} of ${allCharges().length} charges · ${lines.length.toLocaleString("en-IN")} lines`;
   $("detailMore").classList.add("hidden");
@@ -903,12 +926,10 @@ function renderPivot() {
   }
   pivotCols.push({ key: "__total", grand: true });
 
-  // rows (depth-first; children shown when their parent is open)
-  pivotRows = [];
-  const sorted = (n) => [...n.children.values()].sort((a, b) => b.total - a.total);
-  const walk = (n) => { for (const c of sorted(n)) { pivotRows.push(c); if (c.level === 0 && state.pivotOpen.has(c.path)) walk(c); } };
-  walk(root);
-  let head1 = PIVOT_LEVELS.map(([, label], i) => `<th class="dim${dimLast(i)}" rowspan="2" style="${dimStyle(i)}">${label}</th>`).join("");
+  // one row per charge, largest first
+  pivotRows = [...root.children.values()].sort((a, b) => b.total - a.total);
+  // The frozen corner is one cell per header row (a frozen cell spanning two rows doesn't cover the second row reliably).
+  let head1 = `<th class="dim last" style="${CHARGE_COL}">Charge Name</th>`;
   let head2 = "";
   for (const { m, weeks } of months) {
     const open = state.monthsOpen.has(m);
@@ -921,29 +942,24 @@ function renderPivot() {
     }
   }
   head1 += `<th class="gt" rowspan="2">Grand Total</th>`;
+  if (head2) head2 = `<th class="dim last" style="${CHARGE_COL}"></th>` + head2;
 
   const val = (v, i, ci) => {
     const col = pivotCols[ci], cls = col.grand ? "gt" : col.monthTotal ? "mtot" : "";
     return `<td class="${cls}">${v ? `<button class="num${v < 0 ? " neg" : ""}" data-r="${i}" data-c="${ci}">${money(v)}</button>` : ""}</td>`;
   };
-  const txt = (v) => (v ? esc(v) : '<span class="blank">(blank)</span>');
   const body = pivotRows.map((n, i) => {
-    let cells;
-    if (n.level === 0) {
-      const open = state.pivotOpen.has(n.path);
-      const tg = `<button class="tg" data-row="${i}" aria-label="${open ? "Collapse" : "Expand"} ${esc(n.name)}">${open ? "−" : "+"}</button>`;
-      // the charge name may run across the empty label columns of its own row
-      cells = `<td class="dim last" colspan="${PIVOT_LEVELS.length}" style="${dimStyle(0, DIM_TOTAL)}" title="${esc(n.name)}">${tg}${txt(n.name)}${open ? "" : " Total"}</td>`;
-    } else {
-      cells = `<td class="dim" style="${dimStyle(0)}"></td>` + DETAIL_KEYS.map((k, j) => `<td class="dim${dimLast(j + 1)}" style="${dimStyle(j + 1)}" title="${esc(n.dims[k])}">${txt(n.dims[k])}</td>`).join("");
-    }
-    return `<tr class="lv${n.level}">${cells}${pivotCols.map((c, ci) => val(c.grand ? n.total : n.cells[c.key], i, ci)).join("")}</tr>`;
+    const cells = `<td class="dim last" style="${CHARGE_COL}" title="Show ${esc(n.name)} by shipper, party, POL and POD">`
+      + `<button class="charge-link" data-charge="${i}">${n.name ? esc(n.name) : '<span class="blank">(blank)</span>'}</button></td>`;
+    return `<tr class="lv0">${cells}${pivotCols.map((c, ci) => val(c.grand ? n.total : n.cells[c.key], i, ci)).join("")}</tr>`;
   }).join("");
   pivotRows.push(root);
-  const foot = `<tr><td class="dim last" colspan="${PIVOT_LEVELS.length}" style="${dimStyle(0, DIM_TOTAL)}">Grand Total</td>${pivotCols.map((c, ci) => val(c.grand ? root.total : root.cells[c.key], pivotRows.length - 1, ci)).join("")}</tr>`;
+  const foot = `<tr><td class="dim last" style="${CHARGE_COL}">Grand Total</td>${pivotCols.map((c, ci) => val(c.grand ? root.total : root.cells[c.key], pivotRows.length - 1, ci)).join("")}</tr>`;
 
   $("detailTable").className = "pivot";
-  $("detailTable").innerHTML = `<thead><tr>${head1}</tr>${head2 ? `<tr>${head2}</tr>` : ""}</thead><tbody>${body || `<tr><td colspan="${PIVOT_LEVELS.length + pivotCols.length}" style="text-align:center;padding:24px;color:#94a3b8">No billing in this period</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
+  $("detailTable").innerHTML = `<thead><tr>${head1}</tr>${head2 ? `<tr>${head2}</tr>` : ""}</thead><tbody>${body || `<tr><td colspan="${1 + pivotCols.length}" style="text-align:center;padding:24px;color:#94a3b8">No billing in this period</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
+  const rows = $("detailTable").tHead.rows;
+  if (rows[1]) { const h = rows[0].getBoundingClientRect().height; for (const th of rows[1].cells) th.style.top = `${h}px`; }
 }
 
 function billingLines() {
@@ -1002,7 +1018,7 @@ function pivotColRange(col) {
 function pivotClick(e) {
   const t = e.target.closest("button"); if (!t) return true;
   if (t.dataset.month) { const m = t.dataset.month; state.monthsOpen.has(m) ? state.monthsOpen.delete(m) : state.monthsOpen.add(m); renderPivot(); return false; }
-  if (t.dataset.row) { const p = pivotRows[+t.dataset.row].path; state.pivotOpen.has(p) ? state.pivotOpen.delete(p) : state.pivotOpen.add(p); renderPivot(); return false; }
+  if (t.dataset.charge) { openChargeBreakdown(pivotRows[+t.dataset.charge].name); return false; }
   if (t.dataset.r) {
     const n = pivotRows[+t.dataset.r], col = pivotCols[+t.dataset.c];
     const name = n.filter ? PIVOT_LEVELS.filter(([k]) => k in n.filter).map(([k]) => n.filter[k] || "(blank)").join(" › ") : "All charges";
@@ -1012,11 +1028,66 @@ function pivotClick(e) {
   }
   return true;
 }
-$("pivotExpand").onclick = () => {
-  for (const c of buildPivot(billingLines()).root.children.values()) state.pivotOpen.add(c.path);
+$("pivotExpand").onclick = () => {   // open every month into weeks
+  for (const l of billingLines()) state.monthsOpen.add(l.date.slice(0, 7));
   renderPivot();
 };
-$("pivotCollapse").onclick = () => { state.pivotOpen.clear(); state.monthsOpen.clear(); renderPivot(); };
+$("pivotCollapse").onclick = () => { state.monthsOpen.clear(); renderPivot(); };
+
+// ============================================================ charge breakdown pop-up (Shipper / Party / POL / POD)
+const sum = { charge: null, rows: [], q: "" };
+function openChargeBreakdown(charge) {
+  const q = state.detailQ.toLowerCase();
+  const m = new Map();
+  for (const l of inPeriod()) {
+    if (l.charge !== charge) continue;
+    if (q && ![l.charge, l.shipper, l.agent, l.pol, l.pod].some((v) => (v || "").toLowerCase().includes(q))) continue;
+    const key = [l.shipper, l.agent, l.pol, l.pod].join("\u0001");
+    let r = m.get(key);
+    if (!r) m.set(key, r = { shipper: l.shipper || "", agent: l.agent || "", pol: l.pol || "", pod: l.pod || "", total: 0, invoices: new Set() });
+    r.total += l.amount; r.invoices.add(l.invoiceId);
+  }
+  Object.assign(sum, { charge, rows: [...m.values()].sort((a, b) => b.total - a.total), q: "" });
+  $("sSearch").value = "";
+  $("sumOverlay").classList.remove("hidden");
+  renderChargeBreakdown();
+  $("sSearch").focus();
+}
+function chargeBreakdownRows() {
+  const q = sum.q.toLowerCase();
+  return q ? sum.rows.filter((r) => [r.shipper, r.agent, r.pol, r.pod].some((v) => v.toLowerCase().includes(q))) : sum.rows;
+}
+function renderChargeBreakdown() {
+  const rows = chargeBreakdownRows(), total = rows.reduce((t, r) => t + r.total, 0);
+  const txt = (v) => (v ? esc(v) : '<span class="blank">(blank)</span>');
+  $("sTitle").textContent = sum.charge || "(blank)";
+  $("sSub").textContent = `${shortDate(state.from)} – ${shortDate(state.to)} · ${rows.length} shipper / party / lane combinations · Total ${money(total)}`;
+  $("sTable").innerHTML = `<thead><tr><th>Shipper Name</th><th>Party Name</th><th>POL</th><th>POD</th><th class="amt">Total</th></tr></thead><tbody>`
+    + (rows.map((r, i) => `<tr><td class="name" title="${esc(r.shipper)}">${txt(r.shipper)}</td><td class="name" title="${esc(r.agent)}">${txt(r.agent)}</td>`
+        + `<td>${txt(r.pol)}</td><td>${txt(r.pod)}</td>`
+        + `<td class="amt"><button class="num${r.total < 0 ? " neg" : ""}" data-i="${i}" title="Show the invoices">${money(r.total)}</button></td></tr>`).join("")
+      || '<tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8">No matching rows</td></tr>')
+    + `</tbody><tfoot><tr><td colspan="4">Total (${rows.length})</td><td class="amt${total < 0 ? " neg" : ""}">${money(total)}</td></tr></tfoot>`;
+}
+function closeChargeBreakdown() { $("sumOverlay").classList.add("hidden"); sum.charge = null; }
+$("sSearch").oninput = (e) => { sum.q = e.target.value; renderChargeBreakdown(); };
+$("sClose").onclick = closeChargeBreakdown;
+$("sumOverlay").onclick = (e) => { if (e.target === $("sumOverlay")) closeChargeBreakdown(); };
+$("sTable").onclick = (e) => {
+  const b = e.target.closest("button.num"); if (!b) return;
+  const r = chargeBreakdownRows()[+b.dataset.i];
+  openDrill({ title: [sum.charge, r.shipper || "(blank)", r.agent || "(blank)", `${r.pol || "—"} → ${r.pod || "—"}`].join(" › "),
+              charge: sum.charge, shipper: r.shipper, agent: r.agent, pol: r.pol, pod: r.pod });
+};
+$("sCsv").onclick = () => {
+  const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  const rows = chargeBreakdownRows();
+  const lines = [["Charge", "Shipper Name", "Party Name", "POL", "POD", "Total USD"].join(","),
+    ...rows.map((r) => [sum.charge, r.shipper, r.agent, r.pol, r.pod, r.total.toFixed(2)].map(q).join(","))];
+  const url = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  Object.assign(document.createElement("a"), { href: url, download: `${(sum.charge || "charge").replace(/[^\w]+/g, "_")}_breakdown.csv` }).click();
+  URL.revokeObjectURL(url);
+};
 
 // ============================================================ drill-down modal
 function openDrill(f) {
@@ -1047,7 +1118,10 @@ $("mSearch").oninput = (e) => { state.drillQ = e.target.value; state.drillLimit 
 $("mMore").onclick = () => { state.drillLimit += 200; renderDrill(); };
 $("mClose").onclick = closeDrill;
 $("overlay").onclick = (e) => { if (e.target === $("overlay")) closeDrill(); };
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.drill) closeDrill(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
+});
 $("mCsv").onclick = () => {
   const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
   const head = ["Invoice Date", "Invoice No", "Type", "Agent", "Trade Lane", "Charge", "Category", "BL No", "Job No", "Amount USD"];

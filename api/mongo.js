@@ -207,7 +207,8 @@ async function salesDataset() {
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v1";
+const MR_SNAPSHOT_ID = "mr-inventory-v2";
+const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice"];
 
 /** Status bucket from the activity name (keyword rules from the requirements document). */
 function mrBucket(activity) {
@@ -252,6 +253,7 @@ async function buildMr(db, lastSync) {
   }
 
   const move = new Map(latest.map((m) => [s(m.c), m]));
+  const depots = await buildDepots(db);
   const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
   const tanks = [];
   for (const [c, t] of byTank) {
@@ -268,14 +270,77 @@ async function buildMr(db, lastSync) {
   }
   tanks.sort((a, b) => a.c.localeCompare(b.c));
   const dataTo = latest.reduce((mx, m) => (m.date && +new Date(m.date) > mx ? +new Date(m.date) : mx), 0);
-  return { tanks, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
+  return { tanks, depots, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
+}
+
+// Depot details for the Tank Inventory report, all from SARFD (key = upper-cased depot / location name):
+//   country       tblJob.originCountryName of jobs whose containerDepotName is the depot,
+//                 else the country of the depot's port (tblJob POL/POD -> origin/destination country)
+//   port          tblJob.polName of the depot's jobs, else where its empty tanks come in from (tblContainerMovement)
+//   agent         tblContainerMovement.agentName of movements into the depot
+//   billingParty  tblInvoice.billingPartyName of invoices with that depotName
+// Each value is the most common one. Blanks get the most common value of similar depots:
+//   country       -> most common country of depots with the same agent, then overall
+//   billingParty  -> most common of depots in the same country, then the depot's agent
+//   port / agent  -> most common of depots in the same country, then overall
+const locKey = (v) => s(v).replace(/\s+/g, " ").toUpperCase();
+const cleanParty = (v) => s(v).replace(/\s*-\s*cr\.?(?=\s|$)/gi, "").replace(/\s+/g, " ").trim();
+const cleanCountry = (v) => s(v).replace(/\s*,\s*/g, " ").replace(/\s+/g, " ").trim();
+const INBOUND = ["PORT TO DEPOT EMPTY", "EMPTY RECEIVED FROM CONSIGNEE", "DEPOT EMPTY IN", "IMPORT DISCHARGE EMPTY", "EMPTY RETURN BY SHIPPER"];
+
+async function buildDepots(db) {
+  const group = (k, v) => ({ $group: { _id: { k: k, v: v }, n: { $sum: 1 } } });
+  const [jobDepot, portCountryPol, portCountryPod, inbound, agents, billing] = await Promise.all([
+    db.collection("tblJob").aggregate([{ $match: { containerDepotName: { $nin: [null, ""] } } },
+      { $group: { _id: { k: "$containerDepotName", c: "$originCountryName", p: "$polName" }, n: { $sum: 1 } } }]).toArray(),
+    db.collection("tblJob").aggregate([group("$polName", "$originCountryName")]).toArray(),
+    db.collection("tblJob").aggregate([group("$podName", "$destinationCountryName")]).toArray(),
+    db.collection("tblContainerMovement").aggregate([{ $match: { activityName: { $in: INBOUND }, deletedNo: { $exists: false } } },
+      group("$toLocationName", "$fromLocationName")]).toArray(),
+    db.collection("tblContainerMovement").aggregate([{ $match: { deletedNo: { $exists: false } } }, group("$toLocationName", "$agentName")]).toArray(),
+    db.collection("tblInvoice").aggregate([{ $match: { depotName: { $nin: [null, ""] } } }, group("$depotName", "$billingPartyName")]).toArray(),
+  ]);
+
+  // tallies: key -> value -> count
+  const tally = () => new Map();
+  const add = (t, k, v, n) => { k = locKey(k); v = s(v); if (!k || !v) return; const m = t.get(k) || new Map(); m.set(v, (m.get(v) || 0) + n); t.set(k, m); };
+  const top = (t, k) => { const m = t.get(k); if (!m) return ""; let best = "", bn = 0; for (const [v, n] of m) if (n > bn) { best = v; bn = n; } return best; };
+  const country = tally(), jobPort = tally(), portCountry = tally(), fromPort = tally(), agent = tally(), bill = tally();
+  for (const r of jobDepot) { add(country, r._id.k, cleanCountry(r._id.c), r.n); add(jobPort, r._id.k, r._id.p, r.n); }
+  for (const r of [...portCountryPol, ...portCountryPod]) add(portCountry, r._id.k, cleanCountry(r._id.v), r.n);
+  for (const r of inbound) if (locKey(r._id.v) !== locKey(r._id.k) && !/^SUB LEASE/i.test(s(r._id.v))) add(fromPort, r._id.k, r._id.v, r.n);
+  for (const r of agents) add(agent, r._id.k, r._id.v, r.n);
+  for (const r of billing) add(bill, r._id.k, cleanParty(r._id.v), r.n);
+
+  const keys = new Set([...country.keys(), ...jobPort.keys(), ...fromPort.keys(), ...agent.keys(), ...bill.keys()]);
+  const out = {};
+  for (const k of keys) {
+    const port = top(jobPort, k) || top(fromPort, k);
+    out[k] = { country: top(country, k) || top(portCountry, locKey(port)), port, agent: top(agent, k), billingParty: top(bill, k) };
+  }
+  // blanks: most common value among similar depots (see above)
+  const commonBy = (field, by) => {
+    const t = tally();
+    for (const d of Object.values(out)) if (d[field]) add(t, by ? d[by] || "-" : "ALL", d[field], 1);
+    return (d) => top(t, by ? locKey(d[by] || "-") : "ALL");
+  };
+  const fill = (d, f, v) => { if (!d[f] && v) { d[f] = v; d.filled = [...(d.filled || []), f]; } };
+  const ctryByAgent = commonBy("country", "agent"), ctryAll = commonBy("country");
+  for (const d of Object.values(out)) fill(d, "country", ctryByAgent(d) || ctryAll(d));
+  for (const f of ["port", "agent"]) {
+    const sameCountry = commonBy(f, "country"), overall = commonBy(f);
+    for (const d of Object.values(out)) fill(d, f, sameCountry(d) || overall(d));
+  }
+  const billByCountry = commonBy("billingParty", "country"), billAll = commonBy("billingParty");
+  for (const d of Object.values(out)) fill(d, "billingParty", billByCountry(d) || d.agent || billAll(d));
+  return out;
 }
 
 async function mrDataset() {
   if (g._sarMr && Date.now() - g._sarMr.at < TTL_MS) return g._sarMr.data;
   const data = (async () => {
     const db = await getDb();
-    const syncs = await Promise.all(["tblContainerMovement", "tblContainerTransaction"].map((table) =>
+    const syncs = await Promise.all(MR_SYNC_TABLES.map((table) =>
       db.collection("sarfdSyncHistory").findOne(
         { table, status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } },
         { sort: { startedAt: -1 }, projection: { startedAt: 1 } })));
@@ -303,7 +368,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLES = ["admin", "viewer"];
 
 function requireAdmin(user) {
-  if (user.role !== "admin") throw new HttpError(403, "Only admins can manage users", "admin_only");
+  if (user.role !== "admin") throw new HttpError(403, "Only admins can do this", "admin_only");
 }
 
 async function listUsers() {

@@ -253,14 +253,12 @@
   .mr-depot tr.sub td { background: #F6F8FC; font-weight: 700; }
   .mr-depot th.rt, .mr-depot td.rt { background: #F0F4FF; font-weight: 700; }
   .mr-depot tr.sub td.rt { background: #E4EBFA; }
-  .mr-depot td.warn { color: #C24A2E; font-weight: 700; }
   .mr-depot tfoot td, .mr-pivot tfoot td { font-family: "JetBrains Mono", monospace; }
   .mr-depot tfoot td:first-child, .mr-pivot tfoot td:first-child { font-family: "Plus Jakarta Sans", sans-serif; }
   .tank-table td { font-family: "Plus Jakarta Sans", sans-serif; }
   .tank-table td.mono { font-family: "JetBrains Mono", monospace; }
   .tank-table td.name { max-width: 220px; }
   .bucket-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
-  .idle-hi { color: #C24A2E; font-weight: 700; }
   @media (max-width: 1200px) { .kpis.mr-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 640px) { .kpis.mr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .mr-pivot td:first-child { min-width: 220px; } }
 
@@ -1552,16 +1550,14 @@ $("mrPivotXlsx").onclick = () => {
 };
 
 // ---- Depot Report: tanks at a depot (empty allocated / available, cleaning, repair, survey)
-const DEPOT_COLS = [["alloc", "Allocated"], ["clean", "Under Cleaning"], ["repair", "Under Repair"], ["survey", "Under Survey"],
-                    ["a30", "Available (≤30)"], ["a60", "Available (31-60)"], ["a90", "Available (61-90)"], ["a91", "Available (>90)"]];
+// (the ">45 days" depot billing and "<30 days" inventory views are built separately, so no ageing here)
+const DEPOT_COLS = [["alloc", "Allocated"], ["clean", "Under Cleaning"], ["repair", "Under Repair"], ["survey", "Under Survey"], ["avail", "Available"]];
 function depotCol(t) {
   if (t.bucket === "Under Cleaning") return "clean";
   if (t.bucket === "Under Repair") return "repair";
   if (t.bucket === "Under Survey") return "survey";
   if (t.bucket !== "Empty") return null;
-  if (t.activity.includes("ALLOCATED")) return "alloc";
-  const d = idleDays(t) ?? 0;
-  return d <= 30 ? "a30" : d <= 60 ? "a60" : d <= 90 ? "a90" : "a91";
+  return t.activity.includes("ALLOCATED") ? "alloc" : "avail";
 }
 function depotRows() {
   const m = new Map();
@@ -1569,8 +1565,8 @@ function depotRows() {
     const col = depotCol(t); if (!col) continue;
     const depot = t.to || "(No location)", key = [depot, t.agent, t.principal].join("\u0001");
     let r = m.get(key);
-    if (!r) m.set(key, r = { depot, agent: t.agent, principal: t.principal, total: 0, over45: 0, ...Object.fromEntries(DEPOT_COLS.map(([k]) => [k, 0])) });
-    r[col]++; r.total++; if ((idleDays(t) ?? 0) > 45) r.over45++;
+    if (!r) m.set(key, r = { depot, agent: t.agent, principal: t.principal, total: 0, ...Object.fromEntries(DEPOT_COLS.map(([k]) => [k, 0])) });
+    r[col]++; r.total++;
   }
   const q = mr.depotQ.toLowerCase();
   const rows = [...m.values()].filter((r) => !q || [r.depot, r.agent, r.principal].some((v) => v.toLowerCase().includes(q)));
@@ -1578,21 +1574,21 @@ function depotRows() {
   return rows.sort((a, b) => depotTotal.get(b.depot) - depotTotal.get(a.depot) || a.depot.localeCompare(b.depot) || b.total - a.total);
 }
 function sumRows(rows, label) {
-  const o = { depot: label, agent: "", principal: "", total: 0, over45: 0 };
+  const o = { depot: label, agent: "", principal: "", total: 0 };
   for (const [k] of DEPOT_COLS) o[k] = 0;
-  for (const r of rows) { for (const [k] of DEPOT_COLS) o[k] += r[k]; o.total += r.total; o.over45 += r.over45; }
+  for (const r of rows) { for (const [k] of DEPOT_COLS) o[k] += r[k]; o.total += r.total; }
   return o;
 }
 function renderDepot() {
   const rows = depotRows(), grand = sumRows(rows, "GRAND TOTAL");
   const depots = new Set(rows.map((r) => r.depot)).size;
-  $("mrDepotSub").textContent = `${n0(grand.total)} tanks at ${n0(depots)} depots (to-location of the latest movement) · Available aged by days since the last movement`;
+  $("mrDepotSub").textContent = `${n0(grand.total)} tanks at ${n0(depots)} depots (to-location of the latest movement)`;
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : '<span class="dash">–</span>'}</td>`;
   const line = (r, cls, sub) => {
     const base = sub ? `data-d="${esc(r.depot)}"` : `data-d="${esc(r.depot)}" data-ag="${esc(r.agent)}" data-p="${esc(r.principal)}"`;
     return `<tr class="${cls}"><td title="${esc(r.depot)}">${esc(sub ? `${r.depot} — TOTAL` : r.depot)}</td><td title="${esc(r.agent)}">${esc(r.agent)}</td><td title="${esc(r.principal)}">${esc(r.principal)}</td>`
       + DEPOT_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`)).join("")
-      + cell(r.total, base, "rt") + cell(r.over45, `${base} data-c="over45"`, r.over45 ? "warn" : "") + "</tr>";
+      + cell(r.total, base, "rt") + "</tr>";
   };
   let body = "", i = 0;
   while (i < rows.length) {
@@ -1601,21 +1597,21 @@ function renderDepot() {
     body += group.map((r) => line(r, "")).join("");
     if (group.length > 1) body += line(sumRows(group, d), "sub", true);
   }
-  $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th>Principal</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}<th class="rt">Row Total</th><th>&gt; 45 Days</th></tr></thead>
-    <tbody>${body || '<tr><td colspan="13" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
-    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}<td>${n0(grand.total)}</td><td>${n0(grand.over45)}</td></tr></tfoot>`;
+  $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th>Principal</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}<th class="rt">Row Total</th></tr></thead>
+    <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
+    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}<td>${n0(grand.total)}</td></tr></tfoot>`;
 }
 $("mrDepotSearch").oninput = (e) => { mr.depotQ = e.target.value; renderDepot(); };
 $("mrDepotTable").onclick = (e) => {
   const b = e.target.closest("button.num"); if (!b) return;
   const { d, ag, p, c } = b.dataset;
-  const label = c === "over45" ? "> 45 days" : (DEPOT_COLS.find(([k]) => k === c) || [])[1] || "All";
+  const label = (DEPOT_COLS.find(([k]) => k === c) || [])[1] || "All";
   openTanks({ title: [d, ag, label].filter(Boolean).join(" › "), depot: d, agent: ag, principal: p, depotCol: c || "any" });
 };
 $("mrDepotXlsx").onclick = () => {
   const rows = depotRows(), out = [];
   const conv = (r) => ({ "Depot Name": r.depot, "Depot Agent": r.agent, Principal: r.principal,
-    ...Object.fromEntries(DEPOT_COLS.map(([k, l]) => [l, r[k]])), "Row Total": r.total, "Containers > 45 Days": r.over45 });
+    ...Object.fromEntries(DEPOT_COLS.map(([k, l]) => [l, r[k]])), "Row Total": r.total });
   let i = 0;
   while (i < rows.length) {
     const d = rows[i].depot, group = [];
@@ -1624,7 +1620,7 @@ $("mrDepotXlsx").onclick = () => {
     if (group.length > 1) out.push(conv({ ...sumRows(group, `${d} — TOTAL`) }));
   }
   out.push(conv(sumRows(rows, "GRAND TOTAL")));
-  writeXlsx(`SAR_Depot_Report_${todayIso()}.xlsx`, [["Depot Report", out, [30, 34, 30, 10, 14, 12, 12, 14, 16, 16, 14, 10, 18]]]);
+  writeXlsx(`SAR_Depot_Report_${todayIso()}.xlsx`, [["Depot Report", out, [30, 34, 30, 10, 14, 12, 12, 10, 10]]]);
 };
 
 // ---- tank list pop-up
@@ -1636,7 +1632,6 @@ function tankMatches(t, f) {
   if (f.depot != null && (t.to || "(No location)") !== f.depot) return false;
   if (f.depotCol) {
     const col = depotCol(t); if (!col) return false;
-    if (f.depotCol === "over45") return (idleDays(t) ?? 0) > 45;
     if (f.depotCol !== "any" && col !== f.depotCol) return false;
   }
   return true;
@@ -1661,7 +1656,7 @@ function renderTanks() {
     + (rows.slice(0, 1500).map((t) => { const d = idleDays(t); return `<tr><td class="mono">${esc(t.c)}</td><td>${esc([t.size, t.type].filter(Boolean).join(" "))}</td>
         <td class="name" title="${esc(t.principal)}">${esc(t.principal)}</td>
         <td><span class="bucket-pill" style="background:${MR_COLORS[t.bucket]}1F;color:${MR_COLORS[t.bucket]}">${esc(t.activity)}</span></td>
-        <td>${t.date ? shortDate(t.date) : dash}</td><td class="amt mono${d > 45 ? " idle-hi" : ""}">${d ?? "—"}</td>
+        <td>${t.date ? shortDate(t.date) : dash}</td><td class="amt mono">${d ?? "—"}</td>
         <td class="name" title="${esc(t.agent)}">${esc(t.agent)}</td><td class="name" title="${esc(t.from)}">${txt(t.from)}</td><td class="name" title="${esc(t.to)}">${txt(t.to)}</td>
         <td class="mono">${txt(t.exportBl || t.importBl || t.jobNo)}</td></tr>`; }).join("")
       || '<tr><td colspan="10" style="text-align:center;padding:30px;color:#94a3b8">No matching tanks</td></tr>') + "</tbody>";

@@ -564,11 +564,11 @@
 <main id="mrPage" class="hidden">
   <div class="alert hidden" id="mrErr" role="alert"></div>
   <div class="card viewbar">
-    <div><h2 id="mrTitle">Current Inventory</h2><p class="sub" id="mrSub">Loading…</p></div>
+    <div><h2 id="mrTitle">Total Inventory</h2><p class="sub" id="mrSub">Loading…</p></div>
     <div class="mr-controls">
       <label class="f">Principal <select id="mrPrincipal"><option value="">All principals</option></select></label>
       <div class="view-toggle" id="mrTabs" role="group" aria-label="M&amp;R report">
-        <button data-tab="inventory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Current Inventory</button>
+        <button data-tab="inventory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Total Inventory</button>
         <button data-tab="depot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12M7 21v-7h10v7"/></svg>Depot Report</button>
       </div>
     </div>
@@ -1563,13 +1563,13 @@ function renderMr() {
   for (const b of $("mrTabs").children) b.setAttribute("aria-pressed", b.dataset.tab === mr.tab);
   $("mrInventory").classList.toggle("hidden", mr.tab !== "inventory");
   $("mrDepot").classList.toggle("hidden", mr.tab !== "depot");
-  $("mrTitle").textContent = mr.tab === "depot" ? "Depot Report" : "Current Inventory";
+  $("mrTitle").textContent = mr.tab === "depot" ? "Depot Report" : "Total Inventory";
   const synced = mr.data.lastSync ? new Date(mr.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
   $("mrSub").textContent = `Latest movement per tank · movements up to ${mr.data.dataTo ? shortDate(mr.data.dataTo) : "—"} · synced ${synced}`;
   if (mr.tab === "depot") renderDepot(); else renderInventory();
 }
 
-// ---- Current Inventory
+// ---- Total Inventory
 function renderInventory() {
   const tanks = mrTanks(), total = tanks.length;
   const by = Object.fromEntries(MR_BUCKETS.map((b) => [b, 0]));

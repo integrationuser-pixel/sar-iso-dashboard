@@ -289,6 +289,24 @@
   @media (max-width: 1200px) { .kpis.inv-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 640px) { .kpis.inv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .inv-table td.dep { min-width: 150px; } }
 
+  /* ---------- tank deployment ---------- */
+  #depPage { align-content: start; }
+  .kpis.dep-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .dep-table th, .dep-table td { white-space: nowrap; padding: 8px 10px; }
+  .dep-table th { font-size: 10.5px; text-align: right; }
+  .dep-table th.txt, .dep-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
+  .dep-table td.txt { max-width: 260px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .dep-table td.l0 { font-weight: 700; min-width: 220px; }
+  .dep-table td.l1 { color: var(--ink-soft); }
+  .dep-table td:not(.txt) { min-width: 52px; }
+  .dep-table th.gt, .dep-table td.gt { background: #F0F4FF; font-weight: 700; }
+  .dep-table tbody tr.lv1 { background: #FCFDFF; }
+  .dep-table tbody tr:hover { background: #EFF4FF; }
+  .dep-table .tg { margin-right: 6px; }
+  .bl-tanks { max-width: 340px; overflow: hidden; text-overflow: ellipsis; font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--ink-soft); }
+  @media (max-width: 1200px) { .kpis.dep-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .kpis.dep-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
   /* ---------- usage analytics (matches the reference dashboard) ---------- */
   .ua-actions { display: flex; flex-wrap: wrap; gap: 10px; }
   .import-users-btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -428,6 +446,10 @@
     <a href="/" data-page="inv">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M8 21v-6h8v6M8 12h8"/></svg>
       Tank Inventory
+    </a>
+    <a href="/" data-page="dep">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 17h20l-2 4H4z"/><rect x="6" y="9" width="12" height="6" rx="3"/><path d="M12 9V5M9 5h6"/></svg>
+      Tank Deployment
     </a>
   </nav>
   <h4 class="hidden" id="adminHead">ADMIN</h4>
@@ -607,6 +629,32 @@
   </section>
 </main>
 
+<main id="depPage" class="hidden">
+  <div class="alert hidden" id="depErr" role="alert"></div>
+  <div class="card viewbar">
+    <div><h2>Tank Deployment</h2><p class="sub" id="depSub">Loading…</p></div>
+    <div class="mr-controls">
+      <label class="f">From <select id="depFrom"></select></label>
+      <label class="f">To <select id="depTo"></select></label>
+      <div class="view-toggle" id="depGroup" role="group" aria-label="Group by">
+        <button data-g="shipper">By Shipper</button><button data-g="agent">By PLR Agent</button>
+      </div>
+    </div>
+  </div>
+  <div class="kpis dep-kpis" id="depKpis"></div>
+  <section class="card panel">
+    <div class="tools" style="justify-content:space-between">
+      <div><h2 id="depTitle">Tanks Deployed by Shipper</h2><p class="sub" style="margin-bottom:0">Number of tanks on export BLs by HBL month — click a number for the BLs</p></div>
+      <div class="tools" style="margin:0">
+        <input class="search" id="depSearch" placeholder="Search shipper or agent…">
+        <button class="btn" id="depExpand">Expand all</button><button class="btn" id="depCollapse">Collapse all</button>
+        <button class="btn" id="depXlsx">Export to Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap" style="max-height:680px"><table class="dep-table" id="depTable"></table></div>
+  </section>
+</main>
+
 <main id="usagePage" class="hidden">
   <div class="admin-panel-head">
     <div><h1>Usage Analytics</h1><p>Who is signing in to the dashboard, and how often</p></div>
@@ -731,6 +779,20 @@
       </div>
     </div>
     <div class="body"><table id="tTable" class="tank-table"></table></div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="depOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bTitle">
+    <div class="head">
+      <div><h3 id="bTitle"></h3><div class="foot" id="bSub"></div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="search" id="bSearch" placeholder="Search BL, shipper, port, tank…" style="width:240px">
+        <button class="btn" id="bXlsx">Export to Excel</button>
+        <button class="btn" id="bClose" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <div class="body"><table id="bTable" class="tank-table"></table></div>
   </div>
 </div>
 
@@ -915,7 +977,7 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Sales Performance", mr: "M&R Operations", inv: "Tank Inventory", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Sales Performance", mr: "M&R Operations", inv: "Tank Inventory", dep: "Tank Deployment", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";
@@ -936,11 +998,13 @@ function route(next) {
   $("usagePage").classList.toggle("hidden", page !== "usage");
   $("mrPage").classList.toggle("hidden", page !== "mr");
   $("invPage").classList.toggle("hidden", page !== "inv");
-  $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv"].includes(page));
+  $("depPage").classList.toggle("hidden", page !== "dep");
+  $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv", "dep"].includes(page));
   if (page === "admin") loadUsers();
   if (page === "usage") loadUsage();
   if (page === "mr") { if (mr.data) renderMr(); else loadMr(); }
   if (page === "inv") { if (mr.data) renderInv(); else loadInv(false); }
+  if (page === "dep") { if (dep.data) renderDep(); else loadDep(); }
   closeMenu();
 }
 function openMenu() { $("side").classList.add("open"); $("backdrop").classList.remove("hidden"); }
@@ -1002,7 +1066,7 @@ async function loadData(withUser) {
     $("refreshBtn").disabled = false;
   }
 }
-$("refreshBtn").onclick = () => (currentPage === "mr" ? loadMr() : currentPage === "inv" ? loadInv(true) : loadData(false));
+$("refreshBtn").onclick = () => (currentPage === "mr" ? loadMr() : currentPage === "inv" ? loadInv(true) : currentPage === "dep" ? loadDep() : loadData(false));
 
 // ============================================================ filter bar
 $("views").innerHTML = VIEWS.map(([v, l]) => `<option value="${v}">${l === "Custom Range" ? "Custom View" : `${l} View`}</option>`).join("");
@@ -1445,7 +1509,7 @@ $("mClose").onclick = closeDrill;
 $("overlay").onclick = (e) => { if (e.target === $("overlay")) closeDrill(); };
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (mr.drill) closeTanks(); else if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
+  if (dep.drill) closeBls(); else if (mr.drill) closeTanks(); else if (state.drill) closeDrill(); else if (sum.charge) closeChargeBreakdown();
   else for (const id of ["userModal", "importModal"]) closeModal(id);
 });
 $("mCsv").onclick = () => {
@@ -1871,6 +1935,145 @@ $("invXlsx").onclick = () => {
   for (const g of groups) { g.rows.forEach((r) => out.push(line(g.country, r))); out.push(line(`${g.country} Total`, g.tot)); }
   out.push(line("Grand Total", invSum(groups.map((g) => g.tot))));
   writeXlsx(`SAR_Tank_Inventory_${todayIso()}.xlsx`, [["Tank Inventory", out, [22, 30, 16, 26, 26, 6, 8, 8, 8, 8, 6, 6, 6, 12]]]);
+};
+
+// ============================================================ Tank Deployment
+// Tanks on export BLs (SAR Global PTE Ltd) per HBL month, by shipper or PLR agent — same as the Syscon BL Register pivot.
+const dep = { data: null, from: "", to: "", group: store.get("sar.depGroup", "shipper"), q: "", open: new Set(), drill: null, drillQ: "" };
+const depKeys = () => (dep.group === "agent" ? ["plrAgent", "shipper"] : ["shipper", "plrAgent"]);
+const depLabel = { shipper: "Shipper", plrAgent: "PLR Agent" };
+const monthsBetween = (a, b) => { const out = []; let [y, m] = a.split("-").map(Number); const [y2, m2] = b.split("-").map(Number);
+  while ((y < y2 || (y === y2 && m <= m2)) && out.length < 120) { out.push(`${y}-${String(m).padStart(2, "0")}`); m++; if (m > 12) { m = 1; y++; } } return out; };
+
+async function loadDep() {
+  $("depErr").classList.add("hidden");
+  $("refreshBtn").disabled = true;
+  if (!dep.data) { $("depKpis").innerHTML = '<div class="skel"></div>'.repeat(5); $("depSub").textContent = "Loading BLs…"; }
+  try {
+    dep.data = await api("/api/mongo", { dataset: "deploy" });
+    const months = dep.data.bls.map((b) => b.date.slice(0, 7)).sort();
+    const first = months[0] || thisMonth(), last = thisMonth() > (months.at(-1) || "") ? thisMonth() : months.at(-1);
+    const all = monthsBetween(first, last);
+    if (!dep.from || !all.includes(dep.from)) dep.from = first;
+    if (!dep.to || !all.includes(dep.to)) dep.to = last;
+    const opts = (sel) => all.map((m) => `<option value="${m}"${m === sel ? " selected" : ""}>${monthLabel(m)}</option>`).join("");
+    $("depFrom").innerHTML = opts(dep.from); $("depTo").innerHTML = opts(dep.to);
+    renderDep();
+  } catch (e) {
+    if (e.message === "signed out" || e.message === "no access") return;
+    $("depErr").textContent = "Could not load tank deployment: " + e.message; $("depErr").classList.remove("hidden");
+    if (!dep.data) $("depKpis").innerHTML = "";
+  } finally { $("refreshBtn").disabled = false; }
+}
+$("depFrom").onchange = (e) => { dep.from = e.target.value; if (dep.to < dep.from) { dep.to = dep.from; $("depTo").value = dep.to; } renderDep(); };
+$("depTo").onchange = (e) => { dep.to = e.target.value; if (dep.from > dep.to) { dep.from = dep.to; $("depFrom").value = dep.from; } renderDep(); };
+$("depGroup").onclick = (e) => { const b = e.target.closest("button[data-g]"); if (!b) return; dep.group = b.dataset.g; store.set("sar.depGroup", dep.group); dep.open.clear(); renderDep(); };
+$("depSearch").oninput = (e) => { dep.q = e.target.value; renderDep(); };
+
+const depInRange = () => (dep.data?.bls || []).filter((b) => { const m = b.date.slice(0, 7); return m >= dep.from && m <= dep.to; });
+function depRows() {
+  const [k0, k1] = depKeys(), q = dep.q.toLowerCase(), m = new Map();
+  for (const b of depInRange()) {
+    if (q && ![b.shipper, b.plrAgent].some((v) => v.toLowerCase().includes(q))) continue;
+    const a = b[k0], c = b[k1], mo = b.date.slice(0, 7), n = b.tanks.length;
+    let r = m.get(a); if (!r) m.set(a, r = { name: a, total: 0, bls: 0, months: {}, kids: new Map() });
+    r.total += n; r.bls++; r.months[mo] = (r.months[mo] || 0) + n;
+    let k = r.kids.get(c); if (!k) r.kids.set(c, k = { name: c, total: 0, months: {} });
+    k.total += n; k.months[mo] = (k.months[mo] || 0) + n;
+  }
+  return [...m.values()].sort((x, y) => y.total - x.total || x.name.localeCompare(y.name))
+    .map((r) => ({ ...r, kids: [...r.kids.values()].sort((x, y) => y.total - x.total || x.name.localeCompare(y.name)) }));
+}
+
+function renderDep() {
+  if (!dep.data) return;
+  for (const b of $("depGroup").children) b.setAttribute("aria-pressed", b.dataset.g === dep.group);
+  const [k0, k1] = depKeys(), months = monthsBetween(dep.from, dep.to), bls = depInRange();
+  const tanks = bls.reduce((a, b) => a + b.tanks.length, 0);
+  const synced = dep.data.lastSync ? new Date(dep.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
+  $("depSub").textContent = `Export BLs of SAR Global PTE Ltd by HBL date · BLs up to ${dep.data.dataTo ? shortDate(dep.data.dataTo) : "—"} · synced ${synced}`;
+  $("depTitle").textContent = `Tanks Deployed by ${depLabel[k0]}`;
+  $("depSearch").placeholder = `Search ${depLabel[k0].toLowerCase()} or ${depLabel[k1].toLowerCase()}…`;
+
+  const card = (label, value, note, color, attr = "") => `<button class="kpi" ${attr} style="border-top-color:${color}"><div class="lbl">${label}</div><div class="val">${value}</div><div class="note muted">${note}</div></button>`;
+  const cur = monthsBetween(dep.to, dep.to)[0], curTanks = bls.filter((b) => b.date.startsWith(cur)).reduce((a, b) => a + b.tanks.length, 0);
+  $("depKpis").innerHTML = card("Tanks Deployed", n0(tanks), `${monthLabel(dep.from)} – ${monthLabel(dep.to)}`, "#1E3A8A", 'data-all="1"')
+    + card("Export BLs", n0(bls.length), bls.length ? `${(tanks / bls.length).toFixed(1)} tanks per BL` : "", "#0E9AA7", 'data-all="1"')
+    + card("Shippers", n0(new Set(bls.map((b) => b.shipper)).size), "with tanks in the period", "#1F8A4C")
+    + card("PLR Agents", n0(new Set(bls.map((b) => b.plrAgent)).size), "with tanks in the period", "#7B5EA7")
+    + card(`Tanks in ${monthLabel(cur)}`, n0(curTanks), `${n0(bls.filter((b) => b.date.startsWith(cur)).length)} BLs`, "#D98E04", `data-month="${cur}"`);
+
+  const rows = depRows(), grand = { total: 0, months: {} };
+  for (const r of rows) { grand.total += r.total; for (const [m, v] of Object.entries(r.months)) grand.months[m] = (grand.months[m] || 0) + v; }
+  const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : ""}</td>`;
+  const cells = (r, attrs) => months.map((m) => cell(r.months[m], `${attrs} data-m="${m}"`)).join("") + cell(r.total, attrs, "gt");
+  let body = "";
+  for (const r of rows) {
+    const open = dep.open.has(r.name), a0 = `data-a="${esc(r.name)}"`;
+    body += `<tr><td class="txt l0" title="${esc(r.name)}"><button class="tg" data-tg="${esc(r.name)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(r.name)}${open ? "" : " Total"}</td>
+      <td class="txt l1">${open ? "" : `<span class="dash">${r.kids.length} ${depLabel[k1].toLowerCase()}${r.kids.length === 1 ? "" : "s"}</span>`}</td>${cells(r, a0)}</tr>`;
+    if (open) for (const k of r.kids) body += `<tr class="lv1"><td class="txt"></td><td class="txt l1" title="${esc(k.name)}">${esc(k.name)}</td>${cells(k, `${a0} data-b="${esc(k.name)}"`)}</tr>`;
+  }
+  $("depTable").innerHTML = `<thead><tr><th class="txt">${depLabel[k0]}</th><th class="txt">${depLabel[k1]}</th>${months.map((m) => `<th>${monthLabel(m)}</th>`).join("")}<th class="gt">Grand Total</th></tr></thead>
+    <tbody>${body || `<tr><td colspan="${3 + months.length}" style="text-align:center;padding:30px;color:#94a3b8">No BLs in this period</td></tr>`}</tbody>
+    <tfoot><tr><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td>${months.map((m) => `<td>${n0(grand.months[m] || 0)}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
+}
+$("depExpand").onclick = () => { for (const r of depRows()) dep.open.add(r.name); renderDep(); };
+$("depCollapse").onclick = () => { dep.open.clear(); renderDep(); };
+$("depTable").onclick = (e) => {
+  const tg = e.target.closest("[data-tg]");
+  if (tg) { const k = tg.dataset.tg; dep.open.has(k) ? dep.open.delete(k) : dep.open.add(k); return renderDep(); }
+  const b = e.target.closest("button.num"); if (!b) return;
+  const [k0, k1] = depKeys(), { a, b: bb, m } = b.dataset;
+  openBls([a, bb, m ? monthLabel(m) : `${monthLabel(dep.from)} – ${monthLabel(dep.to)}`].filter(Boolean).join(" › "),
+    (x) => x[k0] === a && (!bb || x[k1] === bb) && (!m || x.date.startsWith(m)));
+};
+$("depKpis").onclick = (e) => {
+  const k = e.target.closest(".kpi"); if (!k || (!k.dataset.all && !k.dataset.month)) return;
+  const m = k.dataset.month;
+  openBls(m ? `All BLs › ${monthLabel(m)}` : `All BLs › ${monthLabel(dep.from)} – ${monthLabel(dep.to)}`, (x) => !m || x.date.startsWith(m));
+};
+$("depXlsx").onclick = () => {
+  const [k0, k1] = depKeys(), months = monthsBetween(dep.from, dep.to), out = [];
+  const line = (a, b, r) => ({ [depLabel[k0]]: a, [depLabel[k1]]: b, ...Object.fromEntries(months.map((m) => [monthLabel(m), r.months[m] || 0])), "Grand Total": r.total });
+  const rows = depRows(), grand = { total: 0, months: {} };
+  for (const r of rows) {
+    for (const k of r.kids) out.push(line(r.name, k.name, k));
+    out.push(line(`${r.name} Total`, "", r));
+    grand.total += r.total; for (const [m, v] of Object.entries(r.months)) grand.months[m] = (grand.months[m] || 0) + v;
+  }
+  out.push(line("Grand Total", "", grand));
+  const bls = depInRange().map((x) => ({ "HBL No": x.bl, "HBL Date": new Date(x.date + "T00:00"), Shipper: x.shipper, Consignee: x.consignee, "PLR Agent": x.plrAgent,
+    PLR: x.plr, POL: x.pol, POD: x.pod, FPD: x.fpd, "Job No": x.job, Cargo: x.cargo, "Number of Containers": x.tanks.length, "Container Nos": x.tanks.join(",") }));
+  writeXlsx(`SAR_Tank_Deployment_${todayIso()}.xlsx`, [[`By ${depLabel[k0]}`, out, [40, 34, ...months.map(() => 8), 11]],
+    ["BLs", bls, [20, 12, 36, 36, 32, 16, 16, 16, 16, 20, 12, 10, 60], 1]]);
+};
+
+// ---- BL pop-up
+function openBls(title, pred) { dep.drill = { title, pred }; dep.drillQ = ""; $("bSearch").value = ""; $("depOverlay").classList.remove("hidden"); renderBls(); $("bSearch").focus(); }
+function blRows() {
+  const q = dep.drillQ.toLowerCase();
+  return depInRange().filter(dep.drill.pred)
+    .filter((x) => !q || [x.bl, x.shipper, x.plrAgent, x.pol, x.pod, x.consignee, x.tanks.join(" ")].some((v) => v.toLowerCase().includes(q)));
+}
+function renderBls() {
+  const rows = blRows(), tanks = rows.reduce((a, x) => a + x.tanks.length, 0), dash = '<span class="dash">—</span>';
+  $("bTitle").textContent = dep.drill.title;
+  $("bSub").textContent = `${n0(rows.length)} BLs · ${n0(tanks)} tanks · newest first`;
+  $("bTable").innerHTML = `<thead><tr><th>HBL No</th><th>HBL Date</th><th>Shipper</th><th>PLR Agent</th><th>POL</th><th>POD</th><th class="amt">Tanks</th><th>Container Nos</th></tr></thead><tbody>`
+    + (rows.slice(0, 1500).map((x) => `<tr><td class="mono">${esc(x.bl)}</td><td>${shortDate(x.date)}</td><td class="name" title="${esc(x.shipper)}">${esc(x.shipper)}</td>
+        <td class="name" title="${esc(x.plrAgent)}">${esc(x.plrAgent)}</td><td>${x.pol ? esc(x.pol) : dash}</td><td>${x.pod ? esc(x.pod) : dash}</td>
+        <td class="amt mono">${x.tanks.length}</td><td class="bl-tanks" title="${esc(x.tanks.join(", "))}">${esc(x.tanks.join(", ")) || dash}</td></tr>`).join("")
+      || '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8">No matching BLs</td></tr>') + "</tbody>";
+}
+function closeBls() { $("depOverlay").classList.add("hidden"); dep.drill = null; }
+$("bSearch").oninput = (e) => { dep.drillQ = e.target.value; renderBls(); };
+$("bClose").onclick = closeBls;
+$("depOverlay").onclick = (e) => { if (e.target === $("depOverlay")) closeBls(); };
+$("bXlsx").onclick = () => {
+  const rows = blRows().map((x) => ({ "HBL No": x.bl, "HBL Date": new Date(x.date + "T00:00"), Shipper: x.shipper, Consignee: x.consignee, "PLR Agent": x.plrAgent,
+    POL: x.pol, POD: x.pod, "Number of Containers": x.tanks.length, "Container Nos": x.tanks.join(",") }));
+  writeXlsx(`${dep.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`, [["BLs", rows, [20, 12, 36, 36, 32, 16, 16, 10, 60], 1]]);
 };
 
 // ---- Excel helper: sheets = [[name, rows, column widths, date column index?]]

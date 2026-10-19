@@ -4,6 +4,9 @@
 //   POST /api/mongo  { dataset: "sales" } -> sales lines for the dashboard (signed in)
 //   POST /api/mongo  { dataset: "mr" }    -> current tank inventory for M&R Operations (signed in)
 //   POST /api/mongo  { dataset: "deploy" } -> export BLs with their tanks for Tank Deployment (signed in)
+//   POST /api/mongo  { dataset: "finance" } -> open receivable / payable invoices with due dates (signed in)
+//   POST /api/mongo  { dataset: "financeRemarks" } -> remarks per party (signed in)
+//   POST /api/mongo  { action: "saveFinanceRemark", side: "ar"|"ap", party, remark } -> remarks  (admins)
 //   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in; login: true also records a sign-in)
 //   POST /api/mongo  { dataset: "usage" } -> sign-in stats per user + logins per day  (admins)
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
@@ -427,6 +430,114 @@ async function deployDataset() {
   return data;
 }
 
+// ---------------------------------------------------------------- Finance Recovery (AR / AP outstanding)
+// Same structure as the Syscon "Invoice Outstanding" report, built from SARFD (checked invoice by invoice:
+// invoice and adjusted amounts match for every open invoice SARFD holds):
+//   receivable  = SAR Global sales invoices (PSI, SLI, SDI, MRI) minus receipts, credit notes and journals
+//                 allocated to the invoice number (tblVoucher detail rows)
+//   payable     = SAR Global purchase invoices (PI, PICI, GP, SDPI) minus payments and journals allocated to
+//                 the vendor invoice number; one vendor invoice can cover several purchase invoices
+//   due date    = tblInvoice.dueDate, else invoice date + credit period
+// Receipts and payments in SARFD lag the invoices, so recent settlements may be missing.
+
+const FIN_COMPANIES = ["SAR Global PTE Ltd"];
+const AR_VOUCHERS = ["PSI", "SLI", "SDI", "MRI"];
+const AP_VOUCHERS = ["PI", "PICI", "GP", "SDPI"];
+const SETTLEMENTS = ["BANK RECEIPT", "BANK PAYMENT", "JOURNAL VOUCHER", "CONTRA VOUCHER", "Principle Credit Note"];
+const FIN_SNAPSHOT_ID = "finance-v1";
+
+async function buildFinance(db, lastSync) {
+  const [heads, allocs] = await Promise.all([
+    db.collection("tblInvoice").find(
+      { recordType: "H", companyName: { $in: FIN_COMPANIES }, voucherCode: { $in: [...AR_VOUCHERS, ...AP_VOUCHERS] }, invoiceNo: { $not: /^PRO/i } },
+      { projection: { _id: 0, invoiceNo: 1, invoiceDate: 1, dueDate: 1, creditPeriod: 1, voucherCode: 1, billingPartyName: 1, vendorInvoiceNo: 1,
+                      vendorInvoiceDate: 1, totalInvoiceAmount: 1, invoiceAmount: 1, currencyCode: 1, blNo: 1, jobNo: 1 } }).toArray(),
+    db.collection("tblVoucher").find(
+      { recordType: "D", voucherTypeName: { $in: SETTLEMENTS }, $or: [{ deletedNo: { $exists: false } }, { deletedNo: 0 }],
+        $and: [{ $or: [{ detailInvoiceNo: { $nin: [null, ""] } }, { detailVendorInvoiceNo: { $nin: [null, ""] } }] }] },
+      { projection: { _id: 0, detailInvoiceNo: 1, detailVendorInvoiceNo: 1, detailCreditAmount: 1, detailDebitAmount: 1 } }).toArray(),
+  ]);
+  const key = (v) => s(v).toUpperCase();
+  const settled = new Map();       // invoice / vendor invoice number -> amount settled
+  for (const a of allocs) {
+    const amt = (a.detailCreditAmount || 0) + (a.detailDebitAmount || 0);
+    for (const k of new Set([key(a.detailInvoiceNo), key(a.detailVendorInvoiceNo)])) if (k) settled.set(k, (settled.get(k) || 0) + amt);
+  }
+  const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+  const addDaysIso = (d, n) => { const x = new Date(d + "T00:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const docs = [];
+  // payables: settle purchase invoices sharing one vendor invoice number in date order
+  const apGroups = new Map();
+  for (const h of heads) {
+    const date = day(h.invoiceDate); if (!date) continue;
+    const ar = AR_VOUCHERS.includes(h.voucherCode);
+    const amount = Math.round((h.totalInvoiceAmount ?? h.invoiceAmount ?? 0) * 100) / 100;
+    const due = day(h.dueDate) || addDaysIso(date, Number(h.creditPeriod) || 0);
+    const doc = { side: ar ? "ar" : "ap", party: s(h.billingPartyName) || "(No party)", invoiceNo: s(h.invoiceNo), ref: ar ? s(h.invoiceNo) : s(h.vendorInvoiceNo) || s(h.invoiceNo),
+                  date, due, creditPeriod: Number(h.creditPeriod) || 0, voucher: h.voucherCode, currency: s(h.currencyCode) || "USD", amount, adjusted: 0,
+                  bl: s(h.blNo), job: s(h.jobNo) };
+    if (ar) { doc.adjusted = Math.min(amount, settled.get(key(h.invoiceNo)) || 0); docs.push(doc); }
+    else { const k = key(h.vendorInvoiceNo) || key(h.invoiceNo); if (!apGroups.has(k)) apGroups.set(k, []); apGroups.get(k).push(doc); }
+  }
+  for (const [k, group] of apGroups) {
+    let left = settled.get(k) || 0;
+    for (const d of group.sort((a, b) => a.date.localeCompare(b.date) || a.invoiceNo.localeCompare(b.invoiceNo))) {
+      d.adjusted = Math.min(d.amount, Math.max(0, left)); left -= d.adjusted; docs.push(d);
+    }
+  }
+  const open = [];
+  for (const d of docs) {
+    const out = Math.round((d.amount - d.adjusted) * 100) / 100;
+    if (Math.abs(out) < 0.01) continue;
+    d.adjusted = Math.round(d.adjusted * 100) / 100;
+    d.outstanding = d.side === "ap" ? -out : out;     // payables negative, as in the Syscon report
+    open.push(d);
+  }
+  open.sort((a, b) => a.party.localeCompare(b.party) || a.date.localeCompare(b.date));
+  const dataTo = heads.reduce((mx, h) => { const d = day(h.invoiceDate); return d && d > mx ? d : mx; }, "");
+  return { docs: open, lastSync, dataTo: dataTo || null, generatedAt: new Date().toISOString() };
+}
+
+async function financeDataset() {
+  if (g._sarFin && Date.now() - g._sarFin.at < TTL_MS) return g._sarFin.data;
+  const data = (async () => {
+    const db = await getDb();
+    const syncs = await Promise.all(["tblInvoice", "tblVoucher"].map((table) => db.collection("sarfdSyncHistory").findOne(
+      { table, status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } }, { sort: { startedAt: -1 }, projection: { startedAt: 1 } })));
+    const times = syncs.map((x) => (x?.startedAt ? new Date(x.startedAt).toISOString() : null));
+    const lastSync = times.filter(Boolean).sort().pop() || null;
+    const key = createHash("sha1").update(`${FIN_SNAPSHOT_ID}|${times.join("|")}`).digest("hex");
+    const cache = db.collection("dashboardCache");
+    const snap = await cache.findOne({ _id: FIN_SNAPSHOT_ID });
+    if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
+    const payload = await buildFinance(db, lastSync);
+    const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
+    await cache.replaceOne({ _id: FIN_SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
+    return payload;
+  })();
+  g._sarFin = { at: Date.now(), data };
+  data.catch(() => { g._sarFin = undefined; });
+  return data;
+}
+
+// Remarks per party ("Will settle in SOA" ...), typed by admins; one per side + party.
+async function financeRemarks() {
+  const db = await getDb();
+  return db.collection("financeRemarks").find({}, { projection: { _id: 0 } }).toArray();
+}
+async function saveFinanceRemark(body, user) {
+  requireAdmin(user);
+  const side = body.side === "ap" ? "ap" : body.side === "ar" ? "ar" : null;
+  const party = s(body.party);
+  if (!side || !party) throw new HttpError(400, "side and party are required");
+  const remark = s(body.remark).slice(0, 500);
+  const db = await getDb();
+  const id = `${side}|${party.toUpperCase()}`;
+  if (remark) await db.collection("financeRemarks").updateOne({ _id: id }, { $set: { side, party, remark, updatedAt: new Date(), updatedBy: user.email } }, { upsert: true });
+  else await db.collection("financeRemarks").deleteOne({ _id: id });
+  return financeRemarks();
+}
+
 // ---------------------------------------------------------------- user management (admins)
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -594,6 +705,9 @@ export async function runRequest(body, user) {
   if (body.dataset === "sales") return salesDataset();
   if (body.dataset === "mr") return mrDataset();
   if (body.dataset === "deploy") return deployDataset();
+  if (body.dataset === "finance") return financeDataset();
+  if (body.dataset === "financeRemarks") return financeRemarks();
+  if (body.action === "saveFinanceRemark") return saveFinanceRemark(body, user);
   if (body.dataset === "me") { if (body.login === true) await recordLogin(user).catch((e) => console.error(e)); return user; }
   if (body.dataset === "users") { requireAdmin(user); return listUsers(); }
   if (body.dataset === "usage") return usageAnalytics(user);

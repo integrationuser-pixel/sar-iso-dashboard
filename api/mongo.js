@@ -122,8 +122,15 @@ async function aggregate(collection, pipeline = []) {
 
 // ---------------------------------------------------------------- sales dataset
 
-// tblInvoice voucher codes that are sales documents (purchase vouchers and proformas excluded).
-const SALES_VOUCHERS = { PSI: "Invoice", SLI: "Invoice", SDI: "Invoice", MRI: "Invoice", DN: "Debit Note", CN: "Credit Note" };
+// Same rules as the ERP "Invoice Register Chargewise Rowwise" report behind the weekly-call
+// "1. Billing details" sheet (checked line by line, Feb–Aug 2026 match to the cent):
+//   - sales vouchers only: Principal Sales, Sub Lease, Sundry, M&R Sales invoices and Principal Credit Notes
+//     (Debit Note Agency, purchase vouchers and proformas are not revenue)
+//   - company SAR Global PTE Ltd only (the older SAR LOGISOLUTIONS PTE. LTD. invoices are not in the report)
+//   - proforma invoices (invoice number starting "PRO") left out even when filed under a sales voucher
+//   - invoices carrying a deletedNo are kept: they are still posted in the ledger and in the report
+const SALES_VOUCHERS = { PSI: "Invoice", SLI: "Invoice", SDI: "Invoice", MRI: "Invoice", CN: "Credit Note" };
+const SALES_COMPANIES = ["SAR Global PTE Ltd"];
 const SUNDRY = new Set(["SDI"]);
 const CATEGORIES = ["Lease", "Detention", "EXIM", "M&R", "Other"];
 const s = (v) => (typeof v === "string" ? v.trim() : "");
@@ -132,7 +139,7 @@ const normCharge = (v) => s(v).toUpperCase();
 async function buildSales(db, mappings, lastSync) {
   const catOf = new Map(mappings.map((m) => [normCharge(m.chargeName), CATEGORIES.includes(m.revenueCategory) ? m.revenueCategory : "Other"]));
   const rows = await db.collection("tblInvoice").find(
-    { recordType: "C", voucherCode: { $in: Object.keys(SALES_VOUCHERS) } },
+    { recordType: "C", voucherCode: { $in: Object.keys(SALES_VOUCHERS) }, companyName: { $in: SALES_COMPANIES }, invoiceNo: { $not: /^PRO/i } },
     { projection: { _id: 0, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, lineNo: 1, chargeName: 1,
         chargeTotalAmountHc: 1, billingPartyName: 1, shipperName: 1, polName: 1, podName: 1, blNo: 1, jobNo: 1 } },
   ).toArray();
@@ -167,7 +174,7 @@ async function buildSales(db, mappings, lastSync) {
 // The Atlas cluster downloads slowly (~100 KB/s), so the built dataset is kept gzipped in
 // `dashboardCache` and rebuilt only after a new tblInvoice sync or a charge-mapping change.
 const TTL_MS = 2 * 60 * 1000;
-const SNAPSHOT_ID = "sales-html-v2";
+const SNAPSHOT_ID = "sales-html-v3";
 
 async function salesDataset() {
   if (g._sarSales && Date.now() - g._sarSales.at < TTL_MS) return g._sarSales.data;

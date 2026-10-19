@@ -284,7 +284,6 @@
   .inv-table tr.ctot td { background: #F6F8FC; font-weight: 700; font-size: 13px; }
   .inv-table tr.ctot td.gt { background: #E4EBFA; }
   .inv-table .tg { margin-right: 6px; }
-  .inv-table .est { color: var(--ink-faint); font-style: italic; }
   @media (max-width: 1200px) { .kpis.inv-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 640px) { .kpis.inv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .inv-table td.dep { min-width: 150px; } }
 
@@ -602,7 +601,7 @@
     <div class="tbl-wrap" style="max-height:680px"><table class="inv-table" id="invTable"></table></div>
     <p class="foot" style="margin:10px 0 0">AL = Empty allocated to shipper · AV = Empty available, split by days since the tank's last movement · UC = Under cleaning · UR = Under repair · US = Under survey.
       Depot details come from SARFD: Country from the depot's jobs (or its port), Port from the depot's jobs (or where its empty tanks come in from),
-      Agent from the movements into the depot and Billing Party from invoices with that depot. Values marked * weren't in SARFD, so the most common value of similar depots is shown.</p>
+      Agent from the movements into the depot and Billing Party from invoices with that depot. Values that aren't in SARFD are left blank.</p>
   </section>
 </main>
 
@@ -1743,6 +1742,7 @@ const INV_COLS = [["al", "AL"], ["av30", "<30"], ["av60", ">30"], ["av90", ">60"
 const INV_LABEL = { al: "Allocated (AL)", av30: "Available <30 days", av60: "Available 31–60 days", av90: "Available 61–90 days", av91: "Available >90 days",
                     uc: "Under Cleaning (UC)", ur: "Under Repair (UR)", us: "Under Survey (US)" };
 const inv = { country: "", q: "", closed: new Set() };
+const NO_COUNTRY = "(No country in SARFD)";
 const locKey = (v) => (v || "").replace(/\s+/g, " ").trim().toUpperCase();
 function invCol(t) {
   if (t.bucket === "Under Cleaning") return "uc";
@@ -1774,9 +1774,11 @@ function invDepots() {
   for (const t of mr.data.tanks) {
     const col = invCol(t); if (!col) continue;
     const key = locKey(t.to) || "(NO LOCATION)", D = info[key] || {};
+    // only values found in SARFD: anything the API filled in from similar depots is left blank
+    const filled = new Set(D.filled || []), val = (f) => (filled.has(f) ? "" : D[f] || "");
     let r = m.get(key);
-    if (!r) m.set(key, r = { key, country: D.country || "(Unknown)", depot: t.to || "(No location)", port: D.port || "", agent: D.agent || t.agent,
-                             billing: D.billingParty || "", filled: new Set(D.filled || []), total: 0, ...Object.fromEntries(INV_COLS.map(([k]) => [k, 0])) });
+    if (!r) m.set(key, r = { key, country: val("country") || NO_COUNTRY, depot: t.to || "(No location)", port: val("port"), agent: val("agent") || t.agent,
+                             billing: val("billingParty"), total: 0, ...Object.fromEntries(INV_COLS.map(([k]) => [k, 0])) });
     r[col]++; r.total++;
   }
   return [...m.values()];
@@ -1788,7 +1790,7 @@ function invGroups() {
   const by = new Map();
   for (const r of rows) { if (!by.has(r.country)) by.set(r.country, []); by.get(r.country).push(r); }
   // countries Z → A like the weekly-call sheet
-  return [...by].sort((a, b) => b[0].localeCompare(a[0]))
+  return [...by].sort((a, b) => (a[0] === NO_COUNTRY) - (b[0] === NO_COUNTRY) || b[0].localeCompare(a[0]))
     .map(([country, list]) => ({ country, rows: list.sort((a, b) => a.depot.localeCompare(b.depot)), tot: invSum(list) }));
 }
 function invSum(list) {
@@ -1821,10 +1823,9 @@ function renderInv() {
   let body = "";
   for (const g of groups) {
     const open = !inv.closed.has(g.country), ck = esc(g.country);
-    const v = (r, f, val) => (r.filled.has(f) ? `<span class="est" title="Not in SARFD — most common value of similar depots">${esc(val)} *</span>` : esc(val));
     if (open) g.rows.forEach((r, i) => {
-      body += `<tr><td class="txt ctry" title="${ck}">${i === 0 ? `<button class="tg" data-tg="${ck}" aria-expanded="true">−</button>${r.filled.has("country") ? v(r, "country", g.country) : ck}` : ""}</td>
-        <td class="txt dep" title="${esc(r.depot)}">${esc(r.depot)}</td><td class="txt" title="${esc(r.port)}">${v(r, "port", r.port)}</td><td class="txt" title="${esc(r.agent)}">${v(r, "agent", r.agent)}</td><td class="txt" title="${esc(r.billing)}">${v(r, "billingParty", r.billing)}</td>
+      body += `<tr><td class="txt ctry" title="${ck}">${i === 0 ? `<button class="tg" data-tg="${ck}" aria-expanded="true">−</button>${ck}` : ""}</td>
+        <td class="txt dep" title="${esc(r.depot)}">${esc(r.depot)}</td><td class="txt" title="${esc(r.port)}">${esc(r.port)}</td><td class="txt" title="${esc(r.agent)}">${esc(r.agent)}</td><td class="txt" title="${esc(r.billing)}">${esc(r.billing)}</td>
         ${nums(r, `data-k="${esc(r.key)}"`)}</tr>`;
     });
     body += `<tr class="ctot"><td class="txt ctry" title="${ck} Total">${open ? "" : `<button class="tg" data-tg="${ck}" aria-expanded="false">+</button>`}${ck} Total</td><td class="txt dep"></td><td></td><td></td><td></td>${nums(g.tot, `data-country="${ck}"`)}</tr>`;

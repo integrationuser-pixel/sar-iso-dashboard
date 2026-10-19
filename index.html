@@ -102,7 +102,7 @@
   .foot { font-size: 12px; color: var(--ink-soft); }
   .link { border: 0; background: none; color: var(--accent); font-weight: 600; padding: 0; margin-top: 8px; }
   .dash { color: #CBD2E0; }
-  .neg { color: var(--coral); }
+  .neg { color: var(--ink); }   /* negative amounts in black, like the rest */
   .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; flex: none; }
 
   /* ---------- login (same as the reference dashboard) ---------- */
@@ -320,10 +320,10 @@
   .fin-table td.party { font-weight: 600; max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
   .fin-table th.gt, .fin-table td.gt { background: #F0F4FF; font-weight: 700; }
   .fin-table td.rem { width: 100%; min-width: 90px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); font-size: 12px; }
-  .fin-table .neg, .fin-table .neg .num { color: #C24A2E; }
+  .fin-table .neg, .fin-table .neg .num { color: var(--ink); }
   .fin-table th.acc, .fin-table td.acc { background: #F7F3FC; }
   .fin-table th.net, .fin-table td.net { background: #E4EBFA; font-weight: 700; color: var(--ink); }
-  .fin-table td.net.neg { color: #C24A2E; }
+  .fin-table td.net.neg { color: var(--ink); }
   .fin-table .acc-input { width: 110px; text-align: right; }
   .acc-man { color: #7B5EA7; font-weight: 700; cursor: help; }
   .rem-edit { border: 0; background: none; padding: 0 0 0 6px; color: var(--ink-faint); cursor: pointer; vertical-align: -2px; }

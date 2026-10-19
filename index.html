@@ -603,7 +603,7 @@
     <div class="tbl-wrap" style="max-height:680px"><table class="inv-table" id="invTable"></table></div>
     <p class="foot" style="margin:10px 0 0">AL = Empty allocated to shipper · AV = Empty available, split by days since the tank's last movement · UC = Under cleaning · UR = Under repair · US = Under survey.
       Depot details come from SARFD: Country from the depot's jobs (or its port), Port from the depot's jobs (or where its empty tanks come in from),
-      Agent from the movements into the depot and Billing Party from invoices with that depot. Values that aren't in SARFD are left blank.</p>
+      Agent from the movements into the depot and Billing Party from invoices with that depot.</p>
   </section>
 </main>
 
@@ -628,10 +628,6 @@
     <div class="kpi" style="border-top-color:#0E9AA7"><div class="lbl">Logged In (7 Days)</div><div class="val" id="uaRecent">–</div><div class="note muted">Users who signed in this week</div></div>
     <div class="kpi" style="border-top-color:#D98E04"><div class="lbl">Logins (30 Days)</div><div class="val" id="uaLogins">–</div><div class="note muted" id="uaLoginsNote">All sign-ins</div></div>
   </div>
-  <section class="card panel">
-    <h2>Daily Logins</h2><p class="sub" id="uaChartSub">Sign-ins per day, last 30 days</p>
-    <div class="chart" style="height:240px"><canvas id="usageChart"></canvas></div>
-  </section>
   <section class="card panel">
     <h2>User Activity</h2><p class="sub">Most recent sign-in first</p>
     <div class="tbl-wrap"><table class="ua-table">
@@ -1958,20 +1954,6 @@ function renderUsage() {
   $("uaRecent").textContent = d.loggedInLast7Days; $("uaLogins").textContent = d.logins30;
   const busiest = d.daily.reduce((a, b) => (b.logins > a.logins ? b : a), d.daily[0]);
   $("uaLoginsNote").textContent = busiest?.logins ? `Busiest day: ${new Date(busiest.date + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })} (${busiest.logins})` : "No sign-ins yet";
-  $("uaChartSub").textContent = `Sign-ins per day, last ${d.days} days (${d.timezone.replace("Asia/Kolkata", "IST")})`;
-
-  charts.usage?.destroy();
-  charts.usage = new Chart($("usageChart"), {
-    type: "bar",
-    data: { labels: d.daily.map((x) => new Date(x.date + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })),
-            datasets: [{ label: "Logins", data: d.daily.map((x) => x.logins), backgroundColor: "#2563eb", borderRadius: 4, maxBarThickness: 22 }] },
-    options: {
-      maintainAspectRatio: false, animation: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => { const x = d.daily[c.dataIndex]; return `${x.logins} login${x.logins === 1 ? "" : "s"} · ${x.users} user${x.users === 1 ? "" : "s"}`; } } } },
-      scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#e2e8f0" } }, x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 15 } } },
-    },
-  });
-
   if (!d.users.length) { $("uaBody").innerHTML = '<tr><td colspan="8" class="ua-empty">No users found.</td></tr>'; return; }
   const max = Math.max(1, ...d.users.map((u) => u.totalLogins));
   $("uaBody").innerHTML = d.users.map((u, i) => {

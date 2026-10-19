@@ -3,6 +3,7 @@
 //   GET  /api/mongo?config=1              -> { googleClientId }            (public)
 //   POST /api/mongo  { dataset: "sales" } -> sales lines for the dashboard (signed in)
 //   POST /api/mongo  { dataset: "mr" }    -> current tank inventory for M&R Operations (signed in)
+//   POST /api/mongo  { dataset: "deploy" } -> export BLs with their tanks for Tank Deployment (signed in)
 //   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in; login: true also records a sign-in)
 //   POST /api/mongo  { dataset: "usage" } -> sign-in stats per user + logins per day  (admins)
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
@@ -369,6 +370,63 @@ async function mrDataset() {
   return data;
 }
 
+// ---------------------------------------------------------------- Tank Deployment dataset
+// One row per export BL (tblBL, header rows "H") with its tanks (detail rows "D", container_containerNo).
+// Same rules as the Syscon "BL Register - Dump" pivot it replaces: SAR Global PTE Ltd BLs, month from the
+// HBL date, tanks = the BL's live container list. Checked BL by BL against the dump (Feb–Sep 2026).
+
+const DEPLOY_COMPANIES = ["SAR Global PTE Ltd"];
+const DEPLOY_SNAPSHOT_ID = "deploy-v1";
+const unEntity = (v) => s(v).replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim();
+
+async function buildDeploy(db, lastSync) {
+  const bl = db.collection("tblBL");
+  const [heads, tanks] = await Promise.all([
+    bl.find({ recordType: "H", companyName: { $in: DEPLOY_COMPANIES }, deletedNo: { $exists: false } },
+      { projection: { _id: 0, blId: 1, hblNo: 1, blNo: 1, hblDate: 1, blDate: 1, shipperName: 1, consigneeName: 1, plrAgentName: 1, polAgentName: 1,
+                      podAgentName: 1, plrName: 1, polName: 1, podName: 1, fpdName: 1, exportJobNo: 1, cargoTypeName: 1, commodity: 1 } }).toArray(),
+    bl.aggregate([
+      { $match: { recordType: "D", companyName: { $in: DEPLOY_COMPANIES }, container_containerNo: { $nin: [null, ""] }, container_deletedNo: { $exists: false } } },
+      { $group: { _id: "$blId", tanks: { $addToSet: "$container_containerNo" } } },
+    ]).toArray(),
+  ]);
+  const byBl = new Map(tanks.map((t) => [t._id, [...new Set(t.tanks.map((c) => s(c).toUpperCase()))].sort()]));
+  const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+  const bls = [];
+  for (const h of heads) {
+    const date = day(h.hblDate || h.blDate); if (!date) continue;
+    const list = byBl.get(h.blId) || [];
+    bls.push({ bl: s(h.hblNo || h.blNo), date, shipper: unEntity(h.shipperName) || "(No shipper)", consignee: unEntity(h.consigneeName),
+               plrAgent: unEntity(h.plrAgentName) || "(No PLR agent)", polAgent: unEntity(h.polAgentName), podAgent: unEntity(h.podAgentName),
+               plr: s(h.plrName), pol: s(h.polName), pod: s(h.podName), fpd: s(h.fpdName), job: s(h.exportJobNo), cargo: s(h.cargoTypeName),
+               commodity: s(h.commodity).slice(0, 120), tanks: list });
+  }
+  bls.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.bl.localeCompare(b.bl)));
+  return { bls, lastSync, dataTo: bls[0]?.date || null, generatedAt: new Date().toISOString() };
+}
+
+async function deployDataset() {
+  if (g._sarDeploy && Date.now() - g._sarDeploy.at < TTL_MS) return g._sarDeploy.data;
+  const data = (async () => {
+    const db = await getDb();
+    const last = await db.collection("sarfdSyncHistory").findOne(
+      { table: "tblBL", status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } },
+      { sort: { startedAt: -1 }, projection: { startedAt: 1 } });
+    const lastSync = last?.startedAt ? new Date(last.startedAt).toISOString() : null;
+    const key = createHash("sha1").update(`${DEPLOY_SNAPSHOT_ID}|${lastSync}`).digest("hex");
+    const cache = db.collection("dashboardCache");
+    const snap = await cache.findOne({ _id: DEPLOY_SNAPSHOT_ID });
+    if (snap?.key === key) return JSON.parse(gunzipSync(snap.gz.buffer).toString("utf8"));
+    const payload = await buildDeploy(db, lastSync);
+    const gz = new Binary(gzipSync(Buffer.from(JSON.stringify(payload))));
+    await cache.replaceOne({ _id: DEPLOY_SNAPSHOT_ID }, { key, gz, builtAt: new Date() }, { upsert: true });
+    return payload;
+  })();
+  g._sarDeploy = { at: Date.now(), data };
+  data.catch(() => { g._sarDeploy = undefined; });
+  return data;
+}
+
 // ---------------------------------------------------------------- user management (admins)
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -535,6 +593,7 @@ export async function runRequest(body, user) {
   if (!body || typeof body !== "object") throw new HttpError(400, "Request body must be JSON");
   if (body.dataset === "sales") return salesDataset();
   if (body.dataset === "mr") return mrDataset();
+  if (body.dataset === "deploy") return deployDataset();
   if (body.dataset === "me") { if (body.login === true) await recordLogin(user).catch((e) => console.error(e)); return user; }
   if (body.dataset === "users") { requireAdmin(user); return listUsers(); }
   if (body.dataset === "usage") return usageAnalytics(user);

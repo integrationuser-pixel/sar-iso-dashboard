@@ -262,6 +262,31 @@
   @media (max-width: 1200px) { .kpis.mr-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 640px) { .kpis.mr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .mr-pivot td:first-child { min-width: 220px; } }
 
+  /* ---------- tank inventory <30 days ---------- */
+  #invPage { align-content: start; }
+  .kpis.inv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .inv-table th, .inv-table td { text-align: right; padding: 8px 10px; }
+  .inv-table th { font-size: 10.5px; }
+  .inv-table th.txt, .inv-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
+  .inv-table td.txt { max-width: 125px; white-space: normal; overflow-wrap: anywhere; font-size: 12px; line-height: 1.3; }
+  .inv-table th.wrap { white-space: normal; line-height: 1.2; }
+  .inv-table td:not(.txt) { min-width: 40px; }
+  .inv-table td.ctry { font-weight: 700; min-width: 100px; max-width: 120px; }
+  .inv-table td.dep { font-weight: 600; min-width: 160px; max-width: 200px; position: sticky; z-index: 2; background: inherit; box-shadow: inset -1px 0 0 var(--line); }
+  .inv-table th.dep { position: sticky; z-index: 5; background: var(--thead); box-shadow: inset -1px 0 0 var(--line); }
+  .inv-table tfoot td.dep { z-index: 4; background: var(--grand); }
+  .inv-table th.grp { text-align: center; background: #DCE5F7; color: var(--ink); }
+  .inv-table th.st { text-align: center; background: #4F6FAE; color: #fff; }
+  .inv-table th.av { text-align: center; background: #6E8BC4; color: #fff; }
+  .inv-table th.gt, .inv-table td.gt { background: #F0F4FF; font-weight: 700; }
+  .inv-table td.av30 { background: #F2FBF6; }
+  .inv-table tr.ctot td { background: #F6F8FC; font-weight: 700; font-size: 13px; }
+  .inv-table tr.ctot td.gt { background: #E4EBFA; }
+  .inv-table .tg { margin-right: 6px; }
+  .inv-table .est { color: var(--ink-faint); font-style: italic; }
+  @media (max-width: 1200px) { .kpis.inv-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .kpis.inv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .inv-table td.dep { min-width: 150px; } }
+
   /* ---------- usage analytics (matches the reference dashboard) ---------- */
   .ua-actions { display: flex; flex-wrap: wrap; gap: 10px; }
   .import-users-btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -397,6 +422,10 @@
     <a href="/" data-page="mr">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
       M&amp;R Operations
+    </a>
+    <a href="/" data-page="inv">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M8 21v-6h8v6M8 12h8"/></svg>
+      Tank Inventory &lt;30 days
     </a>
   </nav>
   <h4 class="hidden" id="adminHead">ADMIN</h4>
@@ -549,6 +578,31 @@
       <div class="tbl-wrap" style="max-height:640px"><table class="mr-depot" id="mrDepotTable"></table></div>
     </section>
   </div>
+</main>
+
+<main id="invPage" class="hidden">
+  <div class="alert hidden" id="invErr" role="alert"></div>
+  <div class="card viewbar">
+    <div><h2>Tank Inventory &lt;30 days</h2><p class="sub" id="invSub">Loading…</p></div>
+    <div class="mr-controls">
+      <label class="f">Country <select id="invCountry"><option value="">All countries</option></select></label>
+    </div>
+  </div>
+  <div class="kpis inv-kpis" id="invKpis"></div>
+  <section class="card panel">
+    <div class="tools" style="justify-content:space-between">
+      <div><h2>Depot Inventory</h2><p class="sub" style="margin-bottom:0">Tanks at a depot by status — click a number for the tanks</p></div>
+      <div class="tools" style="margin:0">
+        <input class="search" id="invSearch" placeholder="Search country, depot, port, agent…">
+        <button class="btn" id="invExpand">Expand all</button><button class="btn" id="invCollapse">Collapse all</button>
+        <button class="btn" id="invXlsx">Export to Excel</button>
+      </div>
+    </div>
+    <div class="tbl-wrap" style="max-height:680px"><table class="inv-table" id="invTable"></table></div>
+    <p class="foot" style="margin:10px 0 0">AL = Empty allocated to shipper · AV = Empty available, split by days since the tank's last movement · UC = Under cleaning · UR = Under repair · US = Under survey.
+      Depot details come from SARFD: Country from the depot's jobs (or its port), Port from the depot's jobs (or where its empty tanks come in from),
+      Agent from the movements into the depot and Billing Party from invoices with that depot. Values marked * weren't in SARFD, so the most common value of similar depots is shown.</p>
+  </section>
 </main>
 
 <main id="usagePage" class="hidden">
@@ -863,7 +917,7 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Sales Performance", mr: "M&R Operations", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Sales Performance", mr: "M&R Operations", inv: "Tank Inventory <30 days", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";
@@ -883,10 +937,12 @@ function route(next) {
   $("adminPage").classList.toggle("hidden", page !== "admin");
   $("usagePage").classList.toggle("hidden", page !== "usage");
   $("mrPage").classList.toggle("hidden", page !== "mr");
-  $("refreshBtn").classList.toggle("hidden", page !== "sales" && page !== "mr");
+  $("invPage").classList.toggle("hidden", page !== "inv");
+  $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv"].includes(page));
   if (page === "admin") loadUsers();
   if (page === "usage") loadUsage();
   if (page === "mr") { if (mr.data) renderMr(); else loadMr(); }
+  if (page === "inv") { if (mr.data) renderInv(); else loadInv(false); }
   closeMenu();
 }
 function openMenu() { $("side").classList.add("open"); $("backdrop").classList.remove("hidden"); }
@@ -948,7 +1004,7 @@ async function loadData(withUser) {
     $("refreshBtn").disabled = false;
   }
 }
-$("refreshBtn").onclick = () => (currentPage === "mr" ? loadMr() : loadData(false));
+$("refreshBtn").onclick = () => (currentPage === "mr" ? loadMr() : currentPage === "inv" ? loadInv(true) : loadData(false));
 
 // ============================================================ filter bar
 $("views").innerHTML = VIEWS.map(([v, l]) => `<option value="${v}">${l === "Custom Range" ? "Custom View" : `${l} View`}</option>`).join("");
@@ -1414,15 +1470,18 @@ const DAY_MS = 86400000;
 const idleDays = (t) => (t.date ? Math.max(0, Math.floor((Date.now() - new Date(t.date + "T00:00")) / DAY_MS)) : null);
 const mrTanks = () => (mr.data?.tanks || []).filter((t) => !mr.principal || t.principal === mr.principal);
 
+function setMrData(d) {
+  mr.data = d;
+  const ps = [...new Set(mr.data.tanks.map((t) => t.principal))].sort();
+  if (mr.principal && !ps.includes(mr.principal)) mr.principal = "";
+  $("mrPrincipal").innerHTML = '<option value="">All principals</option>' + ps.map((p) => `<option${p === mr.principal ? " selected" : ""}>${esc(p)}</option>`).join("");
+}
 async function loadMr() {
   $("mrErr").classList.add("hidden");
   $("refreshBtn").disabled = true;
   if (!mr.data) { $("mrKpis").innerHTML = '<div class="skel"></div>'.repeat(5); $("mrSub").textContent = "Loading tank inventory…"; }
   try {
-    mr.data = await api("/api/mongo", { dataset: "mr" });
-    const ps = [...new Set(mr.data.tanks.map((t) => t.principal))].sort();
-    if (mr.principal && !ps.includes(mr.principal)) mr.principal = "";
-    $("mrPrincipal").innerHTML = '<option value="">All principals</option>' + ps.map((p) => `<option${p === mr.principal ? " selected" : ""}>${esc(p)}</option>`).join("");
+    setMrData(await api("/api/mongo", { dataset: "mr" }));
     renderMr();
   } catch (e) {
     if (e.message === "signed out" || e.message === "no access") return;
@@ -1625,6 +1684,7 @@ $("mrDepotXlsx").onclick = () => {
 
 // ---- tank list pop-up
 function tankMatches(t, f) {
+  if (f.test && !f.test(t)) return false;
   if (f.bucket && t.bucket !== f.bucket) return false;
   if (f.principal && t.principal !== f.principal) return false;
   if (f.activity && t.activity !== f.activity) return false;
@@ -1642,13 +1702,13 @@ function openTanks(f) {
 }
 function tankRows() {
   const q = mr.drillQ.toLowerCase();
-  return mrTanks().filter((t) => tankMatches(t, mr.drill))
+  return (mr.drill.allPrincipals ? mr.data.tanks : mrTanks()).filter((t) => tankMatches(t, mr.drill))
     .filter((t) => !q || [t.c, t.type, t.principal, t.activity, t.agent, t.from, t.to, t.jobNo, t.importBl, t.exportBl].some((v) => (v || "").toLowerCase().includes(q)))
     .sort((a, b) => (idleDays(b) ?? -1) - (idleDays(a) ?? -1) || a.c.localeCompare(b.c));
 }
 function renderTanks() {
   const rows = tankRows();
-  $("tTitle").textContent = mr.drill.title + (mr.principal && !mr.drill.principal ? ` · ${mr.principal}` : "");
+  $("tTitle").textContent = mr.drill.title + (mr.principal && !mr.drill.principal && !mr.drill.allPrincipals ? ` · ${mr.principal}` : "");
   const idle = rows.map(idleDays).filter((d) => d != null);
   $("tSub").textContent = `${n0(rows.length)} tanks${idle.length ? ` · average ${Math.round(idle.reduce((a, b) => a + b, 0) / idle.length)} idle days` : ""} · longest idle first`;
   const dash = '<span class="dash">—</span>', txt = (v) => (v ? esc(v) : dash);
@@ -1671,6 +1731,145 @@ $("tXlsx").onclick = () => {
     Vessel: t.vessel, Voyage: t.voyage, "Job No": t.jobNo, "Import BL": t.importBl, "Export BL": t.exportBl }));
   writeXlsx(`${mr.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`,
     [["Tanks", rows, [14, 6, 10, 30, 24, 30, 16, 13, 10, 34, 34, 22, 22, 18, 12, 16, 20, 20], 7]]);
+};
+
+// ============================================================ Tank Inventory <30 days
+// Tanks at a depot (latest movement: empty allocated / available, cleaning, repair, survey), by depot.
+// Depot Country / Port / Agent / Billing Party are worked out from SARFD by the API (mr.data.depots).
+const INV_COLS = [["al", "AL"], ["av30", "<30"], ["av60", ">30"], ["av90", ">60"], ["av91", ">90"], ["uc", "UC"], ["ur", "UR"], ["us", "US"]];
+const INV_LABEL = { al: "Allocated (AL)", av30: "Available <30 days", av60: "Available 31–60 days", av90: "Available 61–90 days", av91: "Available >90 days",
+                    uc: "Under Cleaning (UC)", ur: "Under Repair (UR)", us: "Under Survey (US)" };
+const inv = { country: "", q: "", closed: new Set() };
+const locKey = (v) => (v || "").replace(/\s+/g, " ").trim().toUpperCase();
+function invCol(t) {
+  if (t.bucket === "Under Cleaning") return "uc";
+  if (t.bucket === "Under Repair") return "ur";
+  if (t.bucket === "Under Survey") return "us";
+  if (t.bucket !== "Empty") return null;
+  if (t.activity.includes("ALLOCATED")) return "al";
+  const d = idleDays(t) ?? 0;
+  return d <= 30 ? "av30" : d <= 60 ? "av60" : d <= 90 ? "av90" : "av91";
+}
+
+async function loadInv(force) {
+  $("invErr").classList.add("hidden");
+  $("refreshBtn").disabled = true;
+  if (!mr.data) { $("invKpis").innerHTML = '<div class="skel"></div>'.repeat(6); $("invSub").textContent = "Loading tank inventory…"; }
+  try {
+    if (force || !mr.data) setMrData(await api("/api/mongo", { dataset: "mr" }));
+    renderInv();
+  } catch (e) {
+    if (e.message === "signed out" || e.message === "no access") return;
+    $("invErr").textContent = "Could not load tank inventory: " + e.message; $("invErr").classList.remove("hidden");
+    if (!mr.data) $("invKpis").innerHTML = "";
+  } finally { $("refreshBtn").disabled = false; }
+}
+
+function invDepots() {
+  const info = mr.data.depots || {};
+  const m = new Map();
+  for (const t of mr.data.tanks) {
+    const col = invCol(t); if (!col) continue;
+    const key = locKey(t.to) || "(NO LOCATION)", D = info[key] || {};
+    let r = m.get(key);
+    if (!r) m.set(key, r = { key, country: D.country || "(Unknown)", depot: t.to || "(No location)", port: D.port || "", agent: D.agent || t.agent,
+                             billing: D.billingParty || "", filled: new Set(D.filled || []), total: 0, ...Object.fromEntries(INV_COLS.map(([k]) => [k, 0])) });
+    r[col]++; r.total++;
+  }
+  return [...m.values()];
+}
+function invGroups() {
+  const q = inv.q.toLowerCase();
+  const rows = invDepots().filter((r) => (!inv.country || r.country === inv.country)
+    && (!q || [r.country, r.depot, r.port, r.agent, r.billing, r.key].some((v) => v.toLowerCase().includes(q))));
+  const by = new Map();
+  for (const r of rows) { if (!by.has(r.country)) by.set(r.country, []); by.get(r.country).push(r); }
+  // countries Z → A like the weekly-call sheet
+  return [...by].sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([country, list]) => ({ country, rows: list.sort((a, b) => a.depot.localeCompare(b.depot)), tot: invSum(list) }));
+}
+function invSum(list) {
+  const o = { total: 0 }; for (const [k] of INV_COLS) o[k] = 0;
+  for (const r of list) { for (const [k] of INV_COLS) o[k] += r[k]; o.total += r.total; }
+  return o;
+}
+
+function renderInv() {
+  if (!mr.data) return;
+  const all = invDepots();
+  const countries = [...new Set(all.map((r) => r.country))].sort((a, b) => a.localeCompare(b));
+  if (inv.country && !countries.includes(inv.country)) inv.country = "";
+  $("invCountry").innerHTML = '<option value="">All countries</option>' + countries.map((c) => `<option${c === inv.country ? " selected" : ""}>${esc(c)}</option>`).join("");
+  const groups = invGroups(), grand = invSum(groups.map((g) => g.tot));
+  $("invSub").textContent = `${n0(grand.total)} tanks at ${n0(groups.reduce((a, g) => a + g.rows.length, 0))} depots · status from the latest movement up to ${mr.data.dataTo ? shortDate(mr.data.dataTo) : "—"} · days counted to today`;
+
+  const card = (key, label, value, note, color) => `<button class="kpi" data-col="${key}" style="border-top-color:${color}"><div class="lbl">${label}</div><div class="val">${n0(value)}</div><div class="note muted">${note}</div></button>`;
+  const pct = (v) => (grand.total ? `${(v / grand.total * 100).toFixed(1)}% of depot tanks` : "");
+  const avOld = grand.av60 + grand.av90 + grand.av91;
+  $("invKpis").innerHTML = card("", "Tanks at Depots", grand.total, inv.country || "All countries", "#1E3A8A")
+    + card("al", "Allocated (AL)", grand.al, pct(grand.al), "#7B5EA7")
+    + card("av30", "Available <30 Days", grand.av30, pct(grand.av30), "#1F8A4C")
+    + card("avold", "Available >30 Days", avOld, `${n0(grand.av60)} >30 · ${n0(grand.av90)} >60 · ${n0(grand.av91)} >90`, "#D98E04")
+    + card("uc", "Under Cleaning (UC)", grand.uc, pct(grand.uc), "#0E9AA7")
+    + card("urus", "Repair / Survey", grand.ur + grand.us, `${n0(grand.ur)} UR · ${n0(grand.us)} US`, "#C24A2E");
+
+  const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : ""}</td>`;
+  const nums = (r, base) => INV_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`, k === "av30" ? "av30" : "")).join("") + cell(r.total, base, "gt");
+  let body = "";
+  for (const g of groups) {
+    const open = !inv.closed.has(g.country), ck = esc(g.country);
+    const v = (r, f, val) => (r.filled.has(f) ? `<span class="est" title="Not in SARFD — most common value of similar depots">${esc(val)} *</span>` : esc(val));
+    if (open) g.rows.forEach((r, i) => {
+      body += `<tr><td class="txt ctry">${i === 0 ? `<button class="tg" data-tg="${ck}" aria-expanded="true">−</button>${r.filled.has("country") ? v(r, "country", g.country) : ck}` : ""}</td>
+        <td class="txt dep">${esc(r.depot)}</td><td class="txt">${v(r, "port", r.port)}</td><td class="txt" title="${esc(r.agent)}">${v(r, "agent", r.agent)}</td><td class="txt" title="${esc(r.billing)}">${v(r, "billingParty", r.billing)}</td>
+        ${nums(r, `data-k="${esc(r.key)}"`)}</tr>`;
+    });
+    body += `<tr class="ctot"><td class="txt ctry">${open ? "" : `<button class="tg" data-tg="${ck}" aria-expanded="false">+</button>`}${ck} Total</td><td class="txt dep"></td><td></td><td></td><td></td>${nums(g.tot, `data-country="${ck}"`)}</tr>`;
+  }
+  $("invTable").innerHTML = `<thead>
+      <tr><th class="txt grp" colspan="5" style="text-align:left">Depot</th><th class="st">AL</th><th class="av" colspan="4">AV — days</th><th class="st">UC</th><th class="st">UR</th><th class="st">US</th><th class="gt wrap" rowspan="1"></th></tr>
+      <tr><th class="txt wrap">Depot Country</th><th class="txt dep wrap">Depot Name</th><th class="txt wrap">Depot Port</th><th class="txt wrap">Depot Agent</th><th class="txt wrap">Depot Billing Party</th>
+        ${INV_COLS.map(([k, l]) => `<th class="${k.startsWith("av") ? "av" : "st"}">${k.startsWith("av") ? l : "0"}</th>`).join("")}<th class="gt wrap">Grand Total</th></tr></thead>
+    <tbody>${body || '<tr><td colspan="14" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
+    <tfoot><tr><td class="txt">Grand Total</td><td class="txt dep"></td><td></td><td></td><td></td>${INV_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
+  // freeze the two header rows and the Depot Name column (left offset = width of the Country column)
+  const tbl = $("invTable"), hr = tbl.tHead.rows, h = hr[0].getBoundingClientRect().height;
+  for (const th of hr[1].cells) th.style.top = `${h}px`;
+  const left = `${hr[1].cells[0].getBoundingClientRect().width}px`;
+  for (const c of tbl.querySelectorAll(".dep")) c.style.left = left;
+}
+$("invCountry").onchange = (e) => { inv.country = e.target.value; renderInv(); };
+$("invSearch").oninput = (e) => { inv.q = e.target.value; renderInv(); };
+$("invExpand").onclick = () => { inv.closed.clear(); renderInv(); };
+$("invCollapse").onclick = () => { for (const g of invGroups()) inv.closed.add(g.country); renderInv(); };
+$("invKpis").onclick = (e) => {
+  const b = e.target.closest(".kpi"); if (!b) return;
+  const c = b.dataset.col;
+  const cols = !c ? null : c === "avold" ? ["av60", "av90", "av91"] : c === "urus" ? ["ur", "us"] : [c];
+  const title = !c ? "Tanks at depots" : c === "avold" ? "Available >30 days" : c === "urus" ? "Under Repair / Survey" : INV_LABEL[c];
+  openInvTanks(title + (inv.country ? ` · ${inv.country}` : ""), (t, r) => (!cols ? true : cols.includes(invCol(t))) && (!inv.country || r.country === inv.country));
+};
+$("invTable").onclick = (e) => {
+  const tg = e.target.closest("[data-tg]");
+  if (tg) { const k = tg.dataset.tg; inv.closed.has(k) ? inv.closed.delete(k) : inv.closed.add(k); return renderInv(); }
+  const b = e.target.closest("button.num"); if (!b) return;
+  const { k, country, c } = b.dataset;
+  const depots = new Map(invDepots().map((r) => [r.key, r]));
+  const where = k ? depots.get(k)?.depot || k : `${country} Total`;
+  openInvTanks([where, c ? INV_LABEL[c] : "All"].join(" › "),
+    (t, r) => (k ? r.key === k : r.country === country) && (!c || invCol(t) === c));
+};
+function openInvTanks(title, pred) {
+  const depots = new Map(invDepots().map((r) => [r.key, r]));
+  openTanks({ title, allPrincipals: true, test: (t) => { if (!invCol(t)) return false; const r = depots.get(locKey(t.to) || "(NO LOCATION)"); return !!r && pred(t, r); } });
+}
+$("invXlsx").onclick = () => {
+  const out = [], line = (country, r) => ({ "Depot Country": country, "Depot Name": r.depot ?? "", "Depot Port": r.port ?? "", "Depot Agent": r.agent ?? "",
+    "Depot Billing Party": r.billing ?? "", ...Object.fromEntries(INV_COLS.map(([k, l]) => [k.startsWith("av") ? `AV ${l}` : l, r[k]])), "Grand Total": r.total });
+  const groups = invGroups();
+  for (const g of groups) { g.rows.forEach((r) => out.push(line(g.country, r))); out.push(line(`${g.country} Total`, g.tot)); }
+  out.push(line("Grand Total", invSum(groups.map((g) => g.tot))));
+  writeXlsx(`SAR_Tank_Inventory_${todayIso()}.xlsx`, [["Tank Inventory", out, [22, 30, 16, 26, 26, 6, 8, 8, 8, 8, 6, 6, 6, 12]]]);
 };
 
 // ---- Excel helper: sheets = [[name, rows, column widths, date column index?]]

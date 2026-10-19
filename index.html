@@ -478,7 +478,7 @@
     </a>
     <a href="/" data-page="fin">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
-      Finance Recovery
+      Finance
     </a>
   </nav>
   <h4 class="hidden" id="adminHead">ADMIN</h4>
@@ -1045,7 +1045,7 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Sales Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance Recovery", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Sales Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", fin: "Finance", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";
@@ -2186,7 +2186,7 @@ $("bXlsx").onclick = () => {
   writeXlsx(`${dep.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`, [["BLs", rows, [20, 12, 36, 36, 32, 16, 16, 10, 60], 1]]);
 };
 
-// ============================================================ Finance Recovery
+// ============================================================ Finance
 // Open receivable / payable invoices (same as the Syscon "Invoice Outstanding" report) by party and age.
 // Age = days past the due date as of today: Not Due up to 30, then >30, >60, >90 days.
 const FIN_AGES = [["nd", "Not Due"], ["d30", "Overdue > 30 days"], ["d60", "Overdue > 60 days"], ["d90", "Overdue > 90 days"]];

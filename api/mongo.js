@@ -6,7 +6,8 @@
 //   POST /api/mongo  { dataset: "deploy" } -> export BLs with their tanks for Tank Deployment (signed in)
 //   POST /api/mongo  { dataset: "finance" } -> open receivable / payable invoices with due dates (signed in)
 //   POST /api/mongo  { dataset: "financeRemarks" } -> remarks per party (signed in)
-//   POST /api/mongo  { action: "saveFinanceRemark", side: "ar"|"ap", party, remark } -> remarks  (admins)
+//   POST /api/mongo  { action: "saveFinanceRemark", side: "ar"|"ap", party, remark?, onAccount? } -> remarks  (admins;
+//                    onAccount: number = amount received / paid on account, null = clear and use SARFD's figure)
 //   POST /api/mongo  { dataset: "me" }    -> { email, name, role }        (signed in; login: true also records a sign-in)
 //   POST /api/mongo  { dataset: "usage" } -> sign-in stats per user + logins per day  (admins)
 //   POST /api/mongo  { collection, pipeline } -> read-only aggregate      (signed in)
@@ -438,16 +439,18 @@ async function deployDataset() {
 //   payable     = SAR Global purchase invoices (PI, PICI, GP, SDPI) minus payments and journals allocated to
 //                 the vendor invoice number; one vendor invoice can cover several purchase invoices
 //   due date    = tblInvoice.dueDate, else invoice date + credit period
+//   on account  = receipts (AR) / payments (AP) and credit notes not allocated to any invoice, per party;
+//                 admins can enter the figure per party until SARFD carries all receipts and payments
 // Receipts and payments in SARFD lag the invoices, so recent settlements may be missing.
 
 const FIN_COMPANIES = ["SAR Global PTE Ltd"];
 const AR_VOUCHERS = ["PSI", "SLI", "SDI", "MRI"];
 const AP_VOUCHERS = ["PI", "PICI", "GP", "SDPI"];
 const SETTLEMENTS = ["BANK RECEIPT", "BANK PAYMENT", "JOURNAL VOUCHER", "CONTRA VOUCHER", "Principle Credit Note"];
-const FIN_SNAPSHOT_ID = "finance-v1";
+const FIN_SNAPSHOT_ID = "finance-v2";
 
 async function buildFinance(db, lastSync) {
-  const [heads, allocs] = await Promise.all([
+  const [heads, allocs, onAcc] = await Promise.all([
     db.collection("tblInvoice").find(
       { recordType: "H", companyName: { $in: FIN_COMPANIES }, voucherCode: { $in: [...AR_VOUCHERS, ...AP_VOUCHERS] }, invoiceNo: { $not: /^PRO/i } },
       { projection: { _id: 0, invoiceNo: 1, invoiceDate: 1, dueDate: 1, creditPeriod: 1, voucherCode: 1, billingPartyName: 1, vendorInvoiceNo: 1,
@@ -456,6 +459,15 @@ async function buildFinance(db, lastSync) {
       { recordType: "D", voucherTypeName: { $in: SETTLEMENTS }, $or: [{ deletedNo: { $exists: false } }, { deletedNo: 0 }],
         $and: [{ $or: [{ detailInvoiceNo: { $nin: [null, ""] } }, { detailVendorInvoiceNo: { $nin: [null, ""] } }] }] },
       { projection: { _id: 0, detailInvoiceNo: 1, detailVendorInvoiceNo: 1, detailCreditAmount: 1, detailDebitAmount: 1 } }).toArray(),
+    // money not allocated to an invoice: voucher amount less what its detail lines allocate
+    db.collection("tblVoucher").aggregate([
+      { $match: { companyName: { $in: FIN_COMPANIES }, voucherTypeName: { $in: ["BANK RECEIPT", "BANK PAYMENT", "Principle Credit Note"] },
+                  recordType: { $in: ["H", "D"] }, $or: [{ deletedNo: { $exists: false } }, { deletedNo: 0 }, { voucherTypeName: "Principle Credit Note" }] } },
+      { $group: { _id: "$voucherNo", type: { $first: "$voucherTypeName" }, party: { $first: "$partyName" },
+                  amount: { $max: { $cond: [{ $eq: ["$recordType", "H"] }, "$voucherAmount", 0] } },
+                  allocated: { $sum: { $cond: [{ $and: [{ $eq: ["$recordType", "D"] }, { $gt: [{ $strLenCP: { $ifNull: ["$detailInvoiceNo", ""] } }, 0] }] },
+                                               { $add: [{ $ifNull: ["$detailCreditAmount", 0] }, { $ifNull: ["$detailDebitAmount", 0] }] }, 0] } } } },
+    ]).toArray(),
   ]);
   const key = (v) => s(v).toUpperCase();
   const settled = new Map();       // invoice / vendor invoice number -> amount settled
@@ -494,8 +506,16 @@ async function buildFinance(db, lastSync) {
     open.push(d);
   }
   open.sort((a, b) => a.party.localeCompare(b.party) || a.date.localeCompare(b.date));
+  // on account per party: receipts and credit notes reduce receivables; payments reduce payables
+  const onAccount = { ar: {}, ap: {} };
+  for (const v of onAcc) {
+    const left = Math.round(((v.amount || 0) - (v.allocated || 0)) * 100) / 100;
+    if (left < 0.01 || !s(v.party)) continue;
+    const side = v.type === "BANK PAYMENT" ? "ap" : "ar";
+    onAccount[side][s(v.party)] = Math.round(((onAccount[side][s(v.party)] || 0) + left) * 100) / 100;
+  }
   const dataTo = heads.reduce((mx, h) => { const d = day(h.invoiceDate); return d && d > mx ? d : mx; }, "");
-  return { docs: open, lastSync, dataTo: dataTo || null, generatedAt: new Date().toISOString() };
+  return { docs: open, onAccount, lastSync, dataTo: dataTo || null, generatedAt: new Date().toISOString() };
 }
 
 async function financeDataset() {
@@ -530,11 +550,21 @@ async function saveFinanceRemark(body, user) {
   const side = body.side === "ap" ? "ap" : body.side === "ar" ? "ar" : null;
   const party = s(body.party);
   if (!side || !party) throw new HttpError(400, "side and party are required");
-  const remark = s(body.remark).slice(0, 500);
-  const db = await getDb();
+  const db = await getDb(), col = db.collection("financeRemarks");
   const id = `${side}|${party.toUpperCase()}`;
-  if (remark) await db.collection("financeRemarks").updateOne({ _id: id }, { $set: { side, party, remark, updatedAt: new Date(), updatedBy: user.email } }, { upsert: true });
-  else await db.collection("financeRemarks").deleteOne({ _id: id });
+  const set = { side, party, updatedAt: new Date(), updatedBy: user.email }, unset = {};
+  if ("remark" in body) { const r = s(body.remark).slice(0, 500); if (r) set.remark = r; else unset.remark = ""; }
+  if ("onAccount" in body) {
+    if (body.onAccount === null || body.onAccount === "") { unset.onAccount = ""; unset.onAccountAt = ""; unset.onAccountBy = ""; }
+    else {
+      const n = Number(body.onAccount);
+      if (!Number.isFinite(n) || Math.abs(n) > 1e9) throw new HttpError(400, "onAccount must be a number");
+      Object.assign(set, { onAccount: Math.round(Math.abs(n) * 100) / 100, onAccountAt: new Date(), onAccountBy: user.email });
+    }
+  }
+  await col.updateOne({ _id: id }, { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) }, { upsert: true });
+  const doc = await col.findOne({ _id: id });
+  if (!doc.remark && doc.onAccount == null) await col.deleteOne({ _id: id });   // nothing left to keep
   return financeRemarks();
 }
 

@@ -30,22 +30,22 @@
   .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
   /* ---------- sidebar ---------- */
-  .side { width: 280px; flex: none; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column;
+  .side { width: 212px; flex: none; height: 100vh; position: sticky; top: 0; display: flex; flex-direction: column;
           background: #223D72; color: #E4E9F2; border-right: 1px solid #14274A; overflow-y: auto; }
-  .logo { padding: 22px 24px 14px; }
-  .logo img { display: block; width: 104px; height: auto; }
-  .who { padding: 0 24px 14px; margin-bottom: 6px; border-bottom: 1px solid rgb(255 255 255 / .08);
+  .logo { padding: 16px 18px 10px; }
+  .logo img { display: block; width: 74px; height: auto; }
+  .who { padding: 0 18px 12px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid rgb(255 255 255 / .08);
          font-size: 12.5px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: #9AB0D4; }
-  .side h4 { margin: 14px 24px 6px; font-size: 10.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #7C90B4; }
-  .side nav { padding: 0 12px; }
-  .side nav a { position: relative; display: flex; align-items: center; gap: 11px; margin-bottom: 2px; padding: 11px 12px; border-radius: 8px;
-                color: #B7C4DC; text-decoration: none; font-size: 13.5px; font-weight: 600; transition: background .15s, color .15s, transform .12s; }
+  .side h4 { margin: 12px 18px 6px; font-size: 10.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #7C90B4; }
+  .side nav { padding: 0 10px; }
+  .side nav a { position: relative; display: flex; align-items: center; gap: 9px; margin-bottom: 2px; padding: 9px 10px; border-radius: 8px; white-space: nowrap;
+                color: #B7C4DC; text-decoration: none; font-size: 13px; font-weight: 600; transition: background .15s, color .15s, transform .12s; }
   .side nav a svg { width: 16px; height: 16px; flex: none; opacity: .75; }
   .side nav a:hover { background: rgb(255 255 255 / .08); color: #fff; transform: translateX(2px); }
   .side nav a[aria-current="page"] { background: rgb(255 255 255 / .14); color: #fff; }
   .side nav a[aria-current="page"] svg { opacity: 1; }
-  .side nav a[aria-current="page"]::before { content: ""; position: absolute; left: -12px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: #fff; }
-  .side .bottom { margin-top: auto; padding: 16px 24px 22px; border-top: 1px solid rgb(255 255 255 / .12); font-size: 11.5px; color: #8CA0C4; }
+  .side nav a[aria-current="page"]::before { content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: #fff; }
+  .side .bottom { margin-top: auto; padding: 14px 18px 18px; border-top: 1px solid rgb(255 255 255 / .12); font-size: 11.5px; color: #8CA0C4; }
   .me { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
   .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--grad); color: #fff; font-weight: 700; font-size: 12px; }
   .me .name { color: #fff; font-weight: 700; font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -272,8 +272,10 @@
   .inv-table th, .inv-table td { white-space: nowrap; }
   .inv-table td.txt { max-width: 190px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
   .inv-table td:not(.txt) { min-width: 40px; }
-  .inv-table td.ctry { font-weight: 700; max-width: 220px; }
-  .inv-table td.dep { font-weight: 600; min-width: 160px; max-width: 230px; position: sticky; z-index: 2; background: inherit; box-shadow: inset -1px 0 0 var(--line); }
+  .inv-table td.ctry { font-weight: 700; max-width: 150px; }
+  .inv-table td:nth-child(3) { max-width: 100px; }
+  .inv-table td:nth-child(4), .inv-table td:nth-child(5) { max-width: 135px; }
+  .inv-table td.dep { font-weight: 600; min-width: 150px; max-width: 175px; position: sticky; z-index: 2; background: inherit; box-shadow: inset -1px 0 0 var(--line); }
   .inv-table th.dep { position: sticky; z-index: 5; background: var(--thead); box-shadow: inset -1px 0 0 var(--line); }
   .inv-table tfoot td.dep { z-index: 4; background: var(--grand); }
   .inv-table th.grp { text-align: center; background: #DCE5F7; color: var(--ink); }

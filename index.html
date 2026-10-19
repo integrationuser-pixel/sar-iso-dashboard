@@ -268,11 +268,12 @@
   .inv-table th, .inv-table td { text-align: right; padding: 8px 10px; }
   .inv-table th { font-size: 10.5px; }
   .inv-table th.txt, .inv-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
-  .inv-table td.txt { max-width: 125px; white-space: normal; overflow-wrap: anywhere; font-size: 12px; line-height: 1.3; }
-  .inv-table th.wrap { white-space: normal; line-height: 1.2; }
+  /* one line per cell: long names are cut with "…" and shown in full on hover */
+  .inv-table th, .inv-table td { white-space: nowrap; }
+  .inv-table td.txt { max-width: 190px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
   .inv-table td:not(.txt) { min-width: 40px; }
-  .inv-table td.ctry { font-weight: 700; min-width: 100px; max-width: 120px; }
-  .inv-table td.dep { font-weight: 600; min-width: 160px; max-width: 200px; position: sticky; z-index: 2; background: inherit; box-shadow: inset -1px 0 0 var(--line); }
+  .inv-table td.ctry { font-weight: 700; max-width: 220px; }
+  .inv-table td.dep { font-weight: 600; min-width: 160px; max-width: 230px; position: sticky; z-index: 2; background: inherit; box-shadow: inset -1px 0 0 var(--line); }
   .inv-table th.dep { position: sticky; z-index: 5; background: var(--thead); box-shadow: inset -1px 0 0 var(--line); }
   .inv-table tfoot td.dep { z-index: 4; background: var(--grand); }
   .inv-table th.grp { text-align: center; background: #DCE5F7; color: var(--ink); }
@@ -1822,11 +1823,11 @@ function renderInv() {
     const open = !inv.closed.has(g.country), ck = esc(g.country);
     const v = (r, f, val) => (r.filled.has(f) ? `<span class="est" title="Not in SARFD — most common value of similar depots">${esc(val)} *</span>` : esc(val));
     if (open) g.rows.forEach((r, i) => {
-      body += `<tr><td class="txt ctry">${i === 0 ? `<button class="tg" data-tg="${ck}" aria-expanded="true">−</button>${r.filled.has("country") ? v(r, "country", g.country) : ck}` : ""}</td>
-        <td class="txt dep">${esc(r.depot)}</td><td class="txt">${v(r, "port", r.port)}</td><td class="txt" title="${esc(r.agent)}">${v(r, "agent", r.agent)}</td><td class="txt" title="${esc(r.billing)}">${v(r, "billingParty", r.billing)}</td>
+      body += `<tr><td class="txt ctry" title="${ck}">${i === 0 ? `<button class="tg" data-tg="${ck}" aria-expanded="true">−</button>${r.filled.has("country") ? v(r, "country", g.country) : ck}` : ""}</td>
+        <td class="txt dep" title="${esc(r.depot)}">${esc(r.depot)}</td><td class="txt" title="${esc(r.port)}">${v(r, "port", r.port)}</td><td class="txt" title="${esc(r.agent)}">${v(r, "agent", r.agent)}</td><td class="txt" title="${esc(r.billing)}">${v(r, "billingParty", r.billing)}</td>
         ${nums(r, `data-k="${esc(r.key)}"`)}</tr>`;
     });
-    body += `<tr class="ctot"><td class="txt ctry">${open ? "" : `<button class="tg" data-tg="${ck}" aria-expanded="false">+</button>`}${ck} Total</td><td class="txt dep"></td><td></td><td></td><td></td>${nums(g.tot, `data-country="${ck}"`)}</tr>`;
+    body += `<tr class="ctot"><td class="txt ctry" title="${ck} Total">${open ? "" : `<button class="tg" data-tg="${ck}" aria-expanded="false">+</button>`}${ck} Total</td><td class="txt dep"></td><td></td><td></td><td></td>${nums(g.tot, `data-country="${ck}"`)}</tr>`;
   }
   $("invTable").innerHTML = `<thead>
       <tr><th class="txt grp" colspan="5" style="text-align:left">Depot</th><th class="st">AL</th><th class="av" colspan="4">AV — days</th><th class="st">UC</th><th class="st">UR</th><th class="st">US</th><th class="gt wrap" rowspan="1"></th></tr>

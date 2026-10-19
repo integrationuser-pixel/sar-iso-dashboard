@@ -312,13 +312,20 @@
   /* ---------- finance recovery ---------- */
   #finPage { align-content: start; }
   .kpis.fin-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  .fin-table th, .fin-table td { white-space: nowrap; padding: 8px 12px; text-align: right; }
+  .fin-table th, .fin-table td { white-space: nowrap; padding: 8px 8px; text-align: right; }
+  .fin-table td { font-size: 12px; }
+  .fin-table thead th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
   .fin-table th { font-size: 10.5px; }
   .fin-table th.txt, .fin-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
-  .fin-table td.party { font-weight: 600; max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+  .fin-table td.party { font-weight: 600; max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
   .fin-table th.gt, .fin-table td.gt { background: #F0F4FF; font-weight: 700; }
-  .fin-table td.rem { width: 100%; min-width: 140px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); font-size: 12px; }
+  .fin-table td.rem { width: 100%; min-width: 90px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); font-size: 12px; }
   .fin-table .neg, .fin-table .neg .num { color: #C24A2E; }
+  .fin-table th.acc, .fin-table td.acc { background: #F7F3FC; }
+  .fin-table th.net, .fin-table td.net { background: #E4EBFA; font-weight: 700; color: var(--ink); }
+  .fin-table td.net.neg { color: #C24A2E; }
+  .fin-table .acc-input { width: 110px; text-align: right; }
+  .acc-man { color: #7B5EA7; font-weight: 700; cursor: help; }
   .rem-edit { border: 0; background: none; padding: 0 0 0 6px; color: var(--ink-faint); cursor: pointer; vertical-align: -2px; }
   .rem-edit:hover { color: var(--accent); }
   .rem-input { width: 100%; height: 28px; padding: 0 8px; border: 1px solid var(--accent); border-radius: 6px; font: inherit; font-size: 12px; }
@@ -2184,7 +2191,7 @@ $("bXlsx").onclick = () => {
 // Age = days past the due date as of today: Not Due up to 30, then >30, >60, >90 days.
 const FIN_AGES = [["nd", "Not Due"], ["d30", "Overdue > 30 days"], ["d60", "Overdue > 60 days"], ["d90", "Overdue > 90 days"]];
 const FIN_SIDES = { ar: { title: "Accounts Receivable", table: "Outstanding Amount", party: "Customer" }, ap: { title: "Accounts Payable", table: "Payable Amount", party: "Vendor" } };
-const fin = { data: null, remarks: new Map(), side: store.get("sar.finSide", "ar"), q: "", drill: null, drillQ: "", editing: null };
+const fin = { data: null, remarks: new Map(), side: store.get("sar.finSide", "ar"), q: "", drill: null, drillQ: "", editing: null, editingAcc: null };
 const usd2 = (v) => (v < 0 ? "−" : "") + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const overdueDays = (d) => Math.floor((Date.now() - new Date(d.due + "T00:00")) / DAY_MS);
 const finAge = (d) => { const o = overdueDays(d); return o <= 30 ? "nd" : o <= 60 ? "d30" : o <= 90 ? "d60" : "d90"; };
@@ -2206,19 +2213,26 @@ async function loadFin() {
   } finally { $("refreshBtn").disabled = false; }
 }
 function setFinRemarks(list) { fin.remarks = new Map(list.map((r) => [remKey(r.side, r.party), r])); }
-$("finTabs").onclick = (e) => { const b = e.target.closest("button[data-side]"); if (!b) return; fin.side = b.dataset.side; store.set("sar.finSide", fin.side); fin.editing = null; renderFin(); };
+$("finTabs").onclick = (e) => { const b = e.target.closest("button[data-side]"); if (!b) return; fin.side = b.dataset.side; store.set("sar.finSide", fin.side); fin.editing = null; fin.editingAcc = null; renderFin(); };
 $("finSearch").oninput = (e) => { fin.q = e.target.value; renderFin(); };
 
 const finDocs = () => (fin.data?.docs || []).filter((d) => d.side === fin.side);
 function finRows() {
   const q = fin.q.toLowerCase(), m = new Map();
-  for (const d of finDocs()) {
-    let r = m.get(d.party); if (!r) m.set(d.party, r = { party: d.party, total: 0, n: 0, ...Object.fromEntries(FIN_AGES.map(([k]) => [k, 0])) });
-    r[finAge(d)] += d.outstanding; r.total += d.outstanding; r.n++;
-  }
-  const rows = [...m.values()].map((r) => ({ ...r, remark: fin.remarks.get(remKey(fin.side, r.party))?.remark || "" }))
-    .filter((r) => !q || r.party.toLowerCase().includes(q) || r.remark.toLowerCase().includes(q));
-  return rows.sort((a, b) => Math.abs(b.total) - Math.abs(a.total) || a.party.localeCompare(b.party));
+  const row = (party) => { let r = m.get(party); if (!r) m.set(party, r = { party, total: 0, n: 0, ...Object.fromEntries(FIN_AGES.map(([k]) => [k, 0])) }); return r; };
+  for (const d of finDocs()) { const r = row(d.party); r[finAge(d)] += d.outstanding; r.total += d.outstanding; r.n++; }
+  // parties with money on account but no open invoice still count
+  for (const p of Object.keys(fin.data?.onAccount?.[fin.side] || {})) row(p);
+  for (const [, n] of fin.remarks) if (n.side === fin.side && n.onAccount != null) row(n.party);
+  const rows = [...m.values()].map((r) => {
+    const note = fin.remarks.get(remKey(fin.side, r.party)) || {};
+    const auto = fin.data?.onAccount?.[fin.side]?.[r.party] || 0;
+    const acc = note.onAccount != null ? note.onAccount : auto;            // admin figure wins over SARFD's
+    const accSigned = fin.side === "ap" ? acc : -acc;                      // receipts lower receivables; payments lower payables
+    return { ...r, remark: note.remark || "", acc, accSigned, accSource: note.onAccount != null ? "admin" : auto ? "sarfd" : "", accBy: note.onAccountBy, accAt: note.onAccountAt,
+             net: r.total + accSigned };
+  }).filter((r) => !q || r.party.toLowerCase().includes(q) || r.remark.toLowerCase().includes(q));
+  return rows.sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || a.party.localeCompare(b.party));
 }
 function renderFin() {
   if (!fin.data) return;
@@ -2228,67 +2242,91 @@ function renderFin() {
   const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   const synced = fin.data.lastSync ? new Date(fin.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
   $("finSub").textContent = `Open invoices of SAR Global PTE Ltd · ageing as on ${today} · invoices up to ${fin.data.dataTo ? shortDate(fin.data.dataTo) : "—"} · synced ${synced}`;
-  $("finFoot").textContent = `Outstanding = invoice amount less receipts, payments, credit notes and journals adjusted against it. Age counts days past the due date (invoice date + credit period): Not Due up to 30 days, then over 30, 60 and 90 days.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}`;
+  $("finFoot").innerHTML = `Ageing columns = open invoices (invoice amount less what has been knocked off against them), aged by days past the due date: Not Due up to 30 days, then over 30, 60 and 90 days.
+    <b>On Account</b> = ${fin.side === "ap" ? "payments made" : "receipts and credit notes received"} but not yet knocked off against an invoice — from SARFD, or entered by an admin (marked ✎) where SARFD doesn't have them.
+    <b>Net Outstanding</b> = Grand Total less On Account: the real ${fin.side === "ap" ? "amount payable" : "amount receivable"}.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}`;
 
-  const docs = finDocs(), tot = { total: 0, ...Object.fromEntries(FIN_AGES.map(([k]) => [k, 0])) }, cnt = {};
-  for (const d of docs) { const a = finAge(d); tot[a] += d.outstanding; tot.total += d.outstanding; cnt[a] = (cnt[a] || 0) + 1; }
-  const parties = new Set(docs.map((d) => d.party)).size;
-  const card = (key, label, value, note, color) => `<button class="kpi" data-age="${key}" style="border-top-color:${color}"><div class="lbl">${label}</div><div class="val">${moneyCr(value)}</div><div class="note muted">${note}</div></button>`;
-  $("finKpis").innerHTML = card("", `Total ${S.table}`, tot.total, `${n0(docs.length)} invoices · ${n0(parties)} parties`, "#1E3A8A")
-    + FIN_AGES.map(([k, l], i) => card(k, l, tot[k], `${n0(cnt[k] || 0)} invoices${tot.total ? ` · ${(tot[k] / tot.total * 100).toFixed(0)}%` : ""}`, ["#1F8A4C", "#D98E04", "#E06B2F", "#C24A2E"][i])).join("");
+  const rows = finRows(), admin = isAdmin(), docs = finDocs();
+  const sum = { total: 0, accSigned: 0, net: 0, ...Object.fromEntries(FIN_AGES.map(([k]) => [k, 0])) };
+  for (const r of rows) { for (const [k] of FIN_AGES) sum[k] += r[k]; sum.total += r.total; sum.accSigned += r.accSigned; sum.net += r.net; }
+  const cnt = {}; for (const d of docs) cnt[finAge(d)] = (cnt[finAge(d)] || 0) + 1;
+  const card = (key, label, value, note, color, attr = "") => `<button class="kpi" ${attr} style="border-top-color:${color}"><div class="lbl">${label}</div><div class="val">${moneyCr(value)}</div><div class="note muted">${note}</div></button>`;
+  const manual = rows.filter((r) => r.accSource === "admin").length;
+  $("finKpis").innerHTML = card("net", `Net ${fin.side === "ap" ? "Payable" : "Outstanding"}`, sum.net, "Grand Total less On Account", "#1E3A8A", 'data-age=""')
+    + card("inv", `Invoice ${fin.side === "ap" ? "Payable" : "Outstanding"}`, sum.total, `${n0(docs.length)} open invoices · ${n0(new Set(docs.map((d) => d.party)).size)} parties`, "#0E9AA7", 'data-age=""')
+    + card("acc", "On Account", sum.accSigned, `${n0(rows.filter((r) => r.acc).length)} ${rows.filter((r) => r.acc).length === 1 ? "party" : "parties"}${manual ? ` · ${manual} entered by admin` : ""}`, "#7B5EA7")
+    + card("d90", "Overdue > 90 days", sum.d90, `${n0(cnt.d90 || 0)} invoices${sum.total ? ` · ${(sum.d90 / sum.total * 100).toFixed(0)}% of invoices` : ""}`, "#C24A2E", 'data-age="d90"')
+    + card("nd", "Not Due", sum.nd, `${n0(cnt.nd || 0)} invoices`, "#1F8A4C", 'data-age="nd"');
 
-  const rows = finRows(), admin = isAdmin();
   const cell = (v, party, age, cls = "") => `<td class="${cls}${v < 0 ? " neg" : ""}">${Math.abs(v) >= 0.005 ? `<button class="num" data-p="${esc(party)}"${age ? ` data-age="${age}"` : ""}>${usd2(v)}</button>` : ""}</td>`;
   const edit = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M11 2l3 3-8 8-3.5.5.5-3.5z"/></svg>';
   const body = rows.map((r) => {
-    const editing = fin.editing === r.party;
-    const rem = editing ? `<input class="rem-input" data-rem="${esc(r.party)}" value="${esc(r.remark)}" maxlength="500" placeholder="Type a remark, Enter to save, Esc to cancel">`
-      : `${esc(r.remark) || (admin ? '<span class="dash">—</span>' : "")}${admin ? `<button class="rem-edit" data-edit="${esc(r.party)}" title="Edit remark">${edit}</button>` : ""}`;
-    return `<tr><td class="txt party" title="${esc(r.party)}">${esc(r.party)}</td>${FIN_AGES.map(([k]) => cell(r[k], r.party, k)).join("")}${cell(r.total, r.party, "", "gt")}
+    const ep = esc(r.party);
+    const rem = fin.editing === r.party ? `<input class="rem-input" data-rem="${ep}" value="${esc(r.remark)}" maxlength="500" placeholder="Type a remark, Enter to save, Esc to cancel">`
+      : `${esc(r.remark) || (admin ? '<span class="dash">—</span>' : "")}${admin ? `<button class="rem-edit" data-edit="${ep}" title="Edit remark">${edit}</button>` : ""}`;
+    const accTitle = r.accSource === "admin" ? `Entered by ${r.accBy || "an admin"}${r.accAt ? " on " + new Date(r.accAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""}`
+      : r.accSource === "sarfd" ? "Not allocated to an invoice in SARFD" : "";
+    const acc = fin.editingAcc === r.party
+      ? `<input class="rem-input acc-input" type="number" step="0.01" min="0" data-acc="${ep}" value="${r.accSource === "admin" ? r.acc : ""}" placeholder="${r.accSource === "sarfd" ? r.acc : "0.00"}" title="Amount on account (positive). Empty = use SARFD">`
+      : `${Math.abs(r.accSigned) >= 0.005 ? `<span class="${r.accSigned < 0 ? "neg" : ""}">${usd2(r.accSigned)}</span>${r.accSource === "admin" ? ' <span class="acc-man" title="' + esc(accTitle) + '">✎</span>' : ""}` : ""}${admin ? `<button class="rem-edit" data-edit-acc="${ep}" title="Enter on-account amount">${edit}</button>` : ""}`;
+    return `<tr><td class="txt party" title="${ep}">${ep}</td>${FIN_AGES.map(([k]) => cell(r[k], r.party, k)).join("")}${cell(r.total, r.party, "", "gt")}
+      <td class="acc" title="${esc(accTitle)}">${acc}</td><td class="net${r.net < 0 ? " neg" : ""}">${usd2(r.net)}</td>
       <td class="txt rem" title="${esc(r.remark)}">${rem}</td></tr>`;
   }).join("");
-  const sum = { total: 0, ...Object.fromEntries(FIN_AGES.map(([k]) => [k, 0])) };
-  for (const r of rows) { for (const [k] of FIN_AGES) sum[k] += r[k]; sum.total += r.total; }
-  $("finTable").innerHTML = `<thead><tr><th class="txt">${S.party}</th>${FIN_AGES.map(([, l]) => `<th>${l}</th>`).join("")}<th class="gt">Grand Total</th><th class="txt">Remarks</th></tr></thead>
-    <tbody>${body || '<tr><td colspan="7" style="text-align:center;padding:30px;color:#94a3b8">No open invoices</td></tr>'}</tbody>
-    <tfoot><tr><td class="txt">Grand Total (${n0(rows.length)})</td>${FIN_AGES.map(([k]) => `<td class="${sum[k] < 0 ? "neg" : ""}">${usd2(sum[k])}</td>`).join("")}<td class="gt">${usd2(sum.total)}</td><td></td></tr></tfoot>`;
+  $("finTable").innerHTML = `<thead><tr><th class="txt">${S.party}</th>${FIN_AGES.map(([, l]) => `<th>${l}</th>`).join("")}<th class="gt">Grand Total</th><th class="acc">On Account</th><th class="net">Net Outstanding</th><th class="txt">Remarks</th></tr></thead>
+    <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">No open invoices</td></tr>'}</tbody>
+    <tfoot><tr><td class="txt">Grand Total (${n0(rows.length)})</td>${FIN_AGES.map(([k]) => `<td class="${sum[k] < 0 ? "neg" : ""}">${usd2(sum[k])}</td>`).join("")}<td class="gt">${usd2(sum.total)}</td>
+      <td class="acc${sum.accSigned < 0 ? " neg" : ""}">${usd2(sum.accSigned)}</td><td class="net${sum.net < 0 ? " neg" : ""}">${usd2(sum.net)}</td><td></td></tr></tfoot>`;
   const inp = $("finTable").querySelector(".rem-input"); if (inp) { inp.focus(); inp.select(); }
 }
-async function saveRemark(party, remark) {
-  fin.editing = null;   // first, so the input's blur doesn't save a second time
-  try { setFinRemarks(await api("/api/mongo", { action: "saveFinanceRemark", side: fin.side, party, remark })); }
-  catch (e) { if (e.message !== "signed out" && e.message !== "no access") { $("finErr").textContent = "Could not save the remark: " + e.message; $("finErr").classList.remove("hidden"); } }
+async function saveFinNote(party, fields) {
+  fin.editing = null; fin.editingAcc = null;   // first, so the input's blur doesn't save a second time
+  try { setFinRemarks(await api("/api/mongo", { action: "saveFinanceRemark", side: fin.side, party, ...fields })); }
+  catch (e) { if (e.message !== "signed out" && e.message !== "no access") { $("finErr").textContent = "Could not save: " + e.message; $("finErr").classList.remove("hidden"); } }
   renderFin();
 }
+const saveRemark = (party, remark) => saveFinNote(party, { remark });
+const saveAcc = (party, raw) => saveFinNote(party, { onAccount: raw === "" ? null : Math.abs(Number(raw)) });
 $("finTable").onclick = (e) => {
-  const ed = e.target.closest("[data-edit]"); if (ed) { fin.editing = ed.dataset.edit; return renderFin(); }
+  const ed = e.target.closest("[data-edit]"); if (ed) { fin.editingAcc = null; fin.editing = ed.dataset.edit; return renderFin(); }
+  const ea = e.target.closest("[data-edit-acc]"); if (ea) { fin.editing = null; fin.editingAcc = ea.dataset.editAcc; return renderFin(); }
   const b = e.target.closest("button.num"); if (!b) return;
   const { p, age } = b.dataset, label = age ? FIN_AGES.find(([k]) => k === age)[1] : "All";
   openFinDocs(`${p} › ${label}`, (d) => d.party === p && (!age || finAge(d) === age));
 };
 $("finTable").onkeydown = (e) => {
   const inp = e.target.closest(".rem-input"); if (!inp) return;
-  if (e.key === "Enter") { e.preventDefault(); saveRemark(inp.dataset.rem, inp.value.trim()); }
-  if (e.key === "Escape") { e.stopPropagation(); fin.editing = null; renderFin(); }
+  if (e.key === "Enter") { e.preventDefault(); inp.dataset.acc != null ? saveAcc(inp.dataset.acc, inp.value.trim()) : saveRemark(inp.dataset.rem, inp.value.trim()); }
+  if (e.key === "Escape") { e.stopPropagation(); fin.editing = null; fin.editingAcc = null; renderFin(); }
 };
 $("finTable").addEventListener("focusout", (e) => {
-  const inp = e.target.closest?.(".rem-input"); if (!inp || fin.editing !== inp.dataset.rem) return;
+  const inp = e.target.closest?.(".rem-input"); if (!inp) return;
+  if (inp.dataset.acc != null) {
+    if (fin.editingAcc !== inp.dataset.acc) return;
+    const was = fin.remarks.get(remKey(fin.side, inp.dataset.acc))?.onAccount;
+    const v = inp.value.trim();
+    if ((v === "" && was != null) || (v !== "" && Number(v) !== was)) saveAcc(inp.dataset.acc, v); else { fin.editingAcc = null; renderFin(); }
+    return;
+  }
+  if (fin.editing !== inp.dataset.rem) return;
   const was = fin.remarks.get(remKey(fin.side, inp.dataset.rem))?.remark || "";
   if (inp.value.trim() !== was) saveRemark(inp.dataset.rem, inp.value.trim()); else { fin.editing = null; renderFin(); }
 });
 $("finKpis").onclick = (e) => {
-  const k = e.target.closest(".kpi"); if (!k) return;
+  const k = e.target.closest(".kpi"); if (!k || k.dataset.age == null) return;
   const age = k.dataset.age, label = age ? FIN_AGES.find(([x]) => x === age)[1] : "All";
   openFinDocs(`${FIN_SIDES[fin.side].title} › ${label}`, (d) => !age || finAge(d) === age);
 };
 $("finXlsx").onclick = () => {
   const S = FIN_SIDES[fin.side], rows = finRows();
-  const pivot = rows.map((r) => ({ [S.party]: r.party, ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, +r[k].toFixed(2)])), "Grand Total": +r.total.toFixed(2), Remarks: r.remark }));
+  const src = (r) => (r.accSource === "admin" ? `Entered by ${r.accBy || "admin"}` : r.accSource === "sarfd" ? "SARFD" : "");
+  const pivot = rows.map((r) => ({ [S.party]: r.party, ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, +r[k].toFixed(2)])), "Grand Total": +r.total.toFixed(2),
+    "On Account": +r.accSigned.toFixed(2), "Net Outstanding": +r.net.toFixed(2), "On Account Source": src(r), Remarks: r.remark }));
   const sum = (k) => +rows.reduce((t, r) => t + r[k], 0).toFixed(2);
-  pivot.push({ [S.party]: "Grand Total", ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, sum(k)])), "Grand Total": sum("total"), Remarks: "" });
+  pivot.push({ [S.party]: "Grand Total", ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, sum(k)])), "Grand Total": sum("total"), "On Account": sum("accSigned"), "Net Outstanding": sum("net"), "On Account Source": "", Remarks: "" });
   const parties = new Set(rows.map((r) => r.party));
   const docs = finDocs().filter((d) => parties.has(d.party)).map(finDocRow);
-  writeXlsx(`SAR_${S.title.replace(/ /g, "_")}_${todayIso()}.xlsx`, [[S.table, pivot, [44, 16, 18, 18, 18, 16, 50]], ["Invoices", docs, [40, 22, 20, 12, 12, 8, 12, 14, 14, 14, 18, 22, 10], 3]]);
+  writeXlsx(`SAR_${S.title.replace(/ /g, "_")}_${todayIso()}.xlsx`, [[S.table, pivot, [44, 16, 18, 18, 18, 16, 16, 18, 22, 50]], ["Invoices", docs, [40, 22, 20, 12, 12, 8, 12, 14, 14, 14, 18, 22, 10], 3]]);
 };
 const finDocRow = (d) => ({ Party: d.party, "Reference No": d.ref, "Invoice No": d.invoiceNo, "Reference Date": new Date(d.date + "T00:00"), "Due Date": new Date(d.due + "T00:00"),
   "Credit Period": d.creditPeriod, "Overdue Days": overdueDays(d), "Invoice Amount": d.amount, "Adjusted Amount": d.adjusted, "Outstanding Amount": d.outstanding,

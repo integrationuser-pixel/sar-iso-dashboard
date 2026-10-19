@@ -447,7 +447,7 @@ const FIN_COMPANIES = ["SAR Global PTE Ltd"];
 const AR_VOUCHERS = ["PSI", "SLI", "SDI", "MRI"];
 const AP_VOUCHERS = ["PI", "PICI", "GP", "SDPI"];
 const SETTLEMENTS = ["BANK RECEIPT", "BANK PAYMENT", "JOURNAL VOUCHER", "CONTRA VOUCHER", "Principle Credit Note"];
-const FIN_SNAPSHOT_ID = "finance-v2";
+const FIN_SNAPSHOT_ID = "finance-v3";
 
 async function buildFinance(db, lastSync) {
   const [heads, allocs, onAcc] = await Promise.all([
@@ -463,7 +463,8 @@ async function buildFinance(db, lastSync) {
     db.collection("tblVoucher").aggregate([
       { $match: { companyName: { $in: FIN_COMPANIES }, voucherTypeName: { $in: ["BANK RECEIPT", "BANK PAYMENT", "Principle Credit Note"] },
                   recordType: { $in: ["H", "D"] }, $or: [{ deletedNo: { $exists: false } }, { deletedNo: 0 }, { voucherTypeName: "Principle Credit Note" }] } },
-      { $group: { _id: "$voucherNo", type: { $first: "$voucherTypeName" }, party: { $first: "$partyName" },
+      { $group: { _id: "$voucherNo", type: { $first: "$voucherTypeName" }, party: { $first: "$partyName" }, date: { $first: "$voucherDate" },
+                  ref: { $first: "$referenceNo" }, narration: { $first: "$narration" },
                   amount: { $max: { $cond: [{ $eq: ["$recordType", "H"] }, "$voucherAmount", 0] } },
                   allocated: { $sum: { $cond: [{ $and: [{ $eq: ["$recordType", "D"] }, { $gt: [{ $strLenCP: { $ifNull: ["$detailInvoiceNo", ""] } }, 0] }] },
                                                { $add: [{ $ifNull: ["$detailCreditAmount", 0] }, { $ifNull: ["$detailDebitAmount", 0] }] }, 0] } } } },
@@ -507,15 +508,17 @@ async function buildFinance(db, lastSync) {
   }
   open.sort((a, b) => a.party.localeCompare(b.party) || a.date.localeCompare(b.date));
   // on account per party: receipts and credit notes reduce receivables; payments reduce payables
-  const onAccount = { ar: {}, ap: {} };
+  const onAccount = { ar: {}, ap: {} }, onAccountDocs = [];
   for (const v of onAcc) {
     const left = Math.round(((v.amount || 0) - (v.allocated || 0)) * 100) / 100;
     if (left < 0.01 || !s(v.party)) continue;
     const side = v.type === "BANK PAYMENT" ? "ap" : "ar";
     onAccount[side][s(v.party)] = Math.round(((onAccount[side][s(v.party)] || 0) + left) * 100) / 100;
+    onAccountDocs.push({ side, party: s(v.party), voucherNo: s(v._id), type: s(v.type), date: day(v.date), ref: s(v.ref), narration: s(v.narration).slice(0, 160),
+                         amount: Math.round((v.amount || 0) * 100) / 100, allocated: Math.round((v.allocated || 0) * 100) / 100, onAccount: left });
   }
   const dataTo = heads.reduce((mx, h) => { const d = day(h.invoiceDate); return d && d > mx ? d : mx; }, "");
-  return { docs: open, onAccount, lastSync, dataTo: dataTo || null, generatedAt: new Date().toISOString() };
+  return { docs: open, onAccount, onAccountDocs, lastSync, dataTo: dataTo || null, generatedAt: new Date().toISOString() };
 }
 
 async function financeDataset() {
@@ -562,7 +565,16 @@ async function saveFinanceRemark(body, user) {
       Object.assign(set, { onAccount: Math.round(Math.abs(n) * 100) / 100, onAccountAt: new Date(), onAccountBy: user.email });
     }
   }
-  await col.updateOne({ _id: id }, { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) }, { upsert: true });
+  const update = { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) };
+  if ("onAccount" in body) {   // keep the last 50 changes for the On Account detail view
+    const before = await col.findOne({ _id: id }, { projection: { onAccount: 1, onAccountAt: 1, onAccountBy: 1, onAccountLog: 1 } });
+    const entries = [];
+    if (before?.onAccount != null && !before.onAccountLog?.length)   // figure entered before history was kept
+      entries.push({ amount: before.onAccount, at: before.onAccountAt || null, by: before.onAccountBy || "" });
+    entries.push({ amount: set.onAccount ?? null, at: new Date(), by: user.email });
+    update.$push = { onAccountLog: { $each: entries, $slice: -50 } };
+  }
+  await col.updateOne({ _id: id }, update, { upsert: true });
   const doc = await col.findOne({ _id: id });
   if (!doc.remark && doc.onAccount == null) await col.deleteOne({ _id: id });   // nothing left to keep
   return financeRemarks();

@@ -1244,6 +1244,38 @@ $("kpis").onclick = (e) => { const b = e.target.closest(".kpi"); if (b) { const 
 
 Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
 Chart.defaults.color = "#64748b";
+// Value labels on every chart: options.plugins.valueLabels = { format(value, index, datasetIndex) → text, datasets?: [indexes] }
+// Bars get the label at the end of the bar, doughnut slices in the middle (big enough slices only), lines above the point.
+Chart.register({
+  id: "valueLabels",
+  afterDatasetsDraw(chart, _args, opts) {
+    if (!opts || !opts.format) return;
+    const { ctx } = chart, horizontal = chart.options.indexAxis === "y", type = chart.config.type;
+    ctx.save();
+    ctx.font = `600 11px ${Chart.defaults.font.family}`;
+    chart.data.datasets.forEach((ds, di) => {
+      if (opts.datasets && !opts.datasets.includes(di)) return;
+      const meta = chart.getDatasetMeta(di); if (meta.hidden) return;
+      meta.data.forEach((el, i) => {
+        const v = ds.data[i]; if (v == null || v === 0 || el.skip) return;
+        const text = opts.format(v, i, di); if (!text) return;
+        if (type === "doughnut" || type === "pie") {
+          if (el.circumference < 0.3) return;                     // too thin to hold a label
+          const p = el.tooltipPosition();
+          ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          String(text).split("\n").forEach((t, k, a) => ctx.fillText(t, p.x, p.y + (k - (a.length - 1) / 2) * 13));
+        } else if (horizontal) {
+          ctx.fillStyle = "#334155"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+          ctx.fillText(text, el.x + 5, el.y);
+        } else {
+          ctx.fillStyle = "#334155"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+          ctx.fillText(text, el.x, el.y - 6);
+        }
+      });
+    });
+    ctx.restore();
+  },
+});
 const trunc = (s, n = 30) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 
 function renderBar(id, data, onClick, maxLabel = 30) {
@@ -1252,8 +1284,9 @@ function renderBar(id, data, onClick, maxLabel = 30) {
     type: "bar",
     data: { labels: data.map((d) => d.name), datasets: [{ data: data.map((d) => conv(d.value)), backgroundColor: "#2563eb", borderRadius: 4, maxBarThickness: 26 }] },
     options: {
-      indexAxis: "y", maintainAspectRatio: false, animation: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(data[c.dataIndex].value) } } },
+      indexAxis: "y", maintainAspectRatio: false, animation: false, layout: { padding: { right: 62 } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(data[c.dataIndex].value) } },
+                 valueLabels: { format: (_, i) => moneyShort(data[i].value) } },
       scales: { x: { ticks: { callback: (v) => moneyShort(state.currency === "INR" ? v / state.rate : v) }, grid: { color: "#e2e8f0" } },
                 y: { afterFit: (ax) => { ax.width = Math.max(ax.width, maxLabel * 7 + 10); }, ticks: { callback: (_, i) => trunc(data[i]?.name || "", maxLabel), color: "#334155", font: { size: 11 } }, grid: { display: false } } },
       onClick: (_, els) => { if (els[0]) onClick(data[els[0].index].name); },
@@ -1271,7 +1304,8 @@ function renderMix(byCat) {
     data: { labels: data.map((d) => d.name), datasets: [{ data: data.map((d) => conv(d.value)), backgroundColor: data.map((d) => CAT_COLORS[d.name]), borderWidth: 1 }] },
     options: {
       maintainAspectRatio: false, cutout: "58%", animation: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${data[c.dataIndex].name}: ${money(data[c.dataIndex].value)} (${(data[c.dataIndex].value / total * 100).toFixed(1)}%)` } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${data[c.dataIndex].name}: ${money(data[c.dataIndex].value)} (${(data[c.dataIndex].value / total * 100).toFixed(1)}%)` } },
+                 valueLabels: { format: (_, i) => `${moneyShort(data[i].value)}\n${(data[i].value / total * 100).toFixed(0)}%` } },
       onClick: (_, els) => { if (els[0]) { const c = data[els[0].index].name; openDrill({ title: `${c} Revenue`, category: c }); } },
       onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
     },
@@ -1293,8 +1327,9 @@ function renderTrend(lines) {
     type: "line",
     data: { labels: buckets.map((b) => bucketLabel(b, gr)), datasets: [ds("Total", "total", "#0f172a", 2.5), ...CATEGORIES.map((c) => ds(c, c, CAT_COLORS[c], 1.5))] },
     options: {
-      maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+      maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, layout: { padding: { top: 18, right: 12 } },
       plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10 } },
+                 valueLabels: buckets.length <= 18 ? { datasets: [0], format: (_, i) => moneyShort(rows.get(buckets[i]).total) } : undefined,
                  tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${money(rows.get(buckets[c.dataIndex])[c.datasetIndex === 0 ? "total" : CATEGORIES[c.datasetIndex - 1]])}` } } },
       scales: { y: { ticks: { callback: (v) => moneyShort(state.currency === "INR" ? v / state.rate : v) }, grid: { color: "#e2e8f0" } }, x: { grid: { display: false } } },
       onClick: (_, els) => { if (els[0]) { const b = buckets[els[0].index]; openDrill({ title: `Revenue — ${bucketLabel(b, gr)}`, ...bucketSpan(b) }); } },
@@ -1694,8 +1729,9 @@ function renderInventory() {
     type: "bar",
     data: { labels: agents.map((a) => a[0]), datasets: [{ data: agents.map((a) => a[1]), backgroundColor: "#2563eb", borderRadius: 4, maxBarThickness: 26 }] },
     options: {
-      indexAxis: "y", maintainAspectRatio: false, animation: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${n0(c.raw)} tanks (${(c.raw / total * 100).toFixed(1)}%)` } } },
+      indexAxis: "y", maintainAspectRatio: false, animation: false, layout: { padding: { right: 70 } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${n0(c.raw)} tanks (${(c.raw / total * 100).toFixed(1)}%)` } },
+                 valueLabels: { format: (v) => `${n0(v)} (${(v / total * 100).toFixed(1)}%)` } },
       scales: { x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: "#e2e8f0" } },
                 y: { afterFit: (ax) => { ax.width = Math.max(ax.width, 240); }, ticks: { callback: (_, i) => trunc(agents[i]?.[0] || "", 34), color: "#334155", font: { size: 11 } }, grid: { display: false } } },
       onClick: (_, els) => { if (els[0]) openTanks({ title: `Agent: ${agents[els[0].index][0]}`, agent: agents[els[0].index][0] }); },
@@ -1712,7 +1748,8 @@ function renderInventory() {
     data: { labels: principals.map((p) => p[0]), datasets: [{ data: principals.map((p) => p[1]), backgroundColor: principals.map((_, i) => pColor(i)), borderWidth: 1 }] },
     options: {
       maintainAspectRatio: false, cutout: "58%", animation: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${principals[c.dataIndex][0]}: ${n0(c.raw)} tanks (${(c.raw / total * 100).toFixed(1)}%)` } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${principals[c.dataIndex][0]}: ${n0(c.raw)} tanks (${(c.raw / total * 100).toFixed(1)}%)` } },
+                 valueLabels: { format: (v) => `${n0(v)}\n${(v / total * 100).toFixed(0)}%` } },
       onClick: (_, els) => { if (els[0]) { const p = principals[els[0].index][0]; openTanks({ title: `Principal: ${p}`, principal: p }); } },
       onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
     },

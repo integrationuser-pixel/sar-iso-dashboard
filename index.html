@@ -810,11 +810,10 @@ function money(usd) {
   const v = conv(usd), inr = state.currency === "INR";
   return (v < 0 ? "−" : "") + (inr ? "₹" : "$") + Math.abs(v).toLocaleString(inr ? "en-IN" : "en-US", { maximumFractionDigits: 0 });
 }
-/** KPI cards: crores (₹15.70 Cr) in INR; short USD amounts ($1.78M) in USD. */
+/** KPI cards: always in crores (₹15.70 Cr) in INR and millions ($1.78M) in USD. */
 function moneyCr(usd) {
-  if (state.currency !== "INR") return moneyShort(usd);
-  const v = conv(usd), cr = Math.abs(v) / 1e7;
-  return (v < 0 ? "−" : "") + "₹" + cr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " Cr";
+  const v = conv(usd), inr = state.currency === "INR", n = Math.abs(v) / (inr ? 1e7 : 1e6);
+  return (v < 0 ? "−" : "") + (inr ? "₹" : "$") + n.toLocaleString(inr ? "en-IN" : "en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + (inr ? " Cr" : "M");
 }
 function moneyShort(usd) {
   const v = conv(usd), a = Math.abs(v), inr = state.currency === "INR";

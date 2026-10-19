@@ -2268,7 +2268,7 @@ function renderFin() {
       : r.accSource === "sarfd" ? "Not allocated to an invoice in SARFD" : "";
     const acc = fin.editingAcc === r.party
       ? `<input class="rem-input acc-input" type="number" step="0.01" min="0" data-acc="${ep}" value="${r.accSource === "admin" ? r.acc : ""}" placeholder="${r.accSource === "sarfd" ? r.acc : "0.00"}" title="Amount on account (positive). Empty = use SARFD">`
-      : `${Math.abs(r.accSigned) >= 0.005 ? `<span class="${r.accSigned < 0 ? "neg" : ""}">${usd2(r.accSigned)}</span>${r.accSource === "admin" ? ' <span class="acc-man" title="' + esc(accTitle) + '">✎</span>' : ""}` : ""}${admin ? `<button class="rem-edit" data-edit-acc="${ep}" title="Enter on-account amount">${edit}</button>` : ""}`;
+      : `${Math.abs(r.accSigned) >= 0.005 ? `<button class="num${r.accSigned < 0 ? " neg" : ""}" data-acc-p="${ep}" title="Show the on-account detail">${usd2(r.accSigned)}</button>${r.accSource === "admin" ? ' <span class="acc-man" title="' + esc(accTitle) + '">✎</span>' : ""}` : ""}${admin ? `<button class="rem-edit" data-edit-acc="${ep}" title="Enter on-account amount">${edit}</button>` : ""}`;
     return `<tr><td class="txt party" title="${ep}">${ep}</td>${FIN_AGES.map(([k]) => cell(r[k], r.party, k)).join("")}${cell(r.total, r.party, "", "gt")}
       <td class="acc" title="${esc(accTitle)}">${acc}</td><td class="net${r.net < 0 ? " neg" : ""}">${usd2(r.net)}</td>
       <td class="txt rem" title="${esc(r.remark)}">${rem}</td></tr>`;
@@ -2290,6 +2290,7 @@ const saveAcc = (party, raw) => saveFinNote(party, { onAccount: raw === "" ? nul
 $("finTable").onclick = (e) => {
   const ed = e.target.closest("[data-edit]"); if (ed) { fin.editingAcc = null; fin.editing = ed.dataset.edit; return renderFin(); }
   const ea = e.target.closest("[data-edit-acc]"); if (ea) { fin.editing = null; fin.editingAcc = ea.dataset.editAcc; return renderFin(); }
+  const ac = e.target.closest("[data-acc-p]"); if (ac) return openAccDetail(ac.dataset.accP);
   const b = e.target.closest("button.num"); if (!b) return;
   const { p, age } = b.dataset, label = age ? FIN_AGES.find(([k]) => k === age)[1] : "All";
   openFinDocs(`${p} › ${label}`, (d) => d.party === p && (!age || finAge(d) === age));
@@ -2313,7 +2314,9 @@ $("finTable").addEventListener("focusout", (e) => {
   if (inp.value.trim() !== was) saveRemark(inp.dataset.rem, inp.value.trim()); else { fin.editing = null; renderFin(); }
 });
 $("finKpis").onclick = (e) => {
-  const k = e.target.closest(".kpi"); if (!k || k.dataset.age == null) return;
+  const k = e.target.closest(".kpi"); if (!k) return;
+  if (k.querySelector(".lbl")?.textContent === "On Account") return openAccDetail(null);
+  if (k.dataset.age == null) return;
   const age = k.dataset.age, label = age ? FIN_AGES.find(([x]) => x === age)[1] : "All";
   openFinDocs(`${FIN_SIDES[fin.side].title} › ${label}`, (d) => !age || finAge(d) === age);
 };
@@ -2331,6 +2334,54 @@ $("finXlsx").onclick = () => {
 const finDocRow = (d) => ({ Party: d.party, "Reference No": d.ref, "Invoice No": d.invoiceNo, "Reference Date": new Date(d.date + "T00:00"), "Due Date": new Date(d.due + "T00:00"),
   "Credit Period": d.creditPeriod, "Overdue Days": overdueDays(d), "Invoice Amount": d.amount, "Adjusted Amount": d.adjusted, "Outstanding Amount": d.outstanding,
   Age: FIN_AGES.find(([k]) => k === finAge(d))[1], "BL No": d.bl, Currency: d.currency });
+
+// ---- On Account detail: how Net Outstanding is worked out, where the figure comes from, its history
+function openAccDetail(party) { fin.drill = { acc: true, party, title: party ? `${party} › On Account` : `${FIN_SIDES[fin.side].title} › On Account` }; fin.drillQ = ""; $("fSearch").value = ""; $("finOverlay").classList.remove("hidden"); renderAccDetail(); }
+function accVouchers() {
+  const q = fin.drillQ.toLowerCase(), p = fin.drill.party;
+  return (fin.data.onAccountDocs || []).filter((v) => v.side === fin.side && (!p || v.party === p))
+    .filter((v) => !q || [v.voucherNo, v.party, v.ref, v.narration, v.type].some((x) => (x || "").toLowerCase().includes(q)))
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
+function renderAccDetail() {
+  const p = fin.drill.party, rows = finRows().filter((r) => !p || r.party === p), dash = '<span class="dash">—</span>';
+  const fmtD = (d) => (d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—");
+  const tot = rows.reduce((t, r) => ({ total: t.total + r.total, acc: t.acc + r.accSigned, net: t.net + r.net }), { total: 0, acc: 0, net: 0 });
+  const vouchers = accVouchers(), ap = fin.side === "ap";
+  $("fTitle").textContent = fin.drill.title;
+  $("fSub").textContent = p ? (rows[0]?.accSource === "admin" ? `Using the amount entered by ${rows[0].accBy || "an admin"} on ${fmtD(rows[0].accAt)}` : rows[0]?.accSource === "sarfd" ? "Using unallocated money in SARFD" : "No on-account amount")
+    : `${n0(rows.filter((r) => r.acc).length)} parties with money on account`;
+  const sec = (title, cols) => `<tr><th colspan="${cols}" style="background:var(--grand);text-align:left;font-size:11.5px">${title}</th></tr>`;
+  let html = "<tbody>";
+  // 1. calculation
+  html += sec("How Net Outstanding is worked out", 7)
+    + `<tr><td colspan="6">Grand Total — open invoices${p ? "" : ` (${n0(rows.length)} parties)`}</td><td class="amt mono">${usd2(tot.total)}</td></tr>`
+    + `<tr><td colspan="6">On Account — ${ap ? "paid" : "received"} but not knocked off against invoices</td><td class="amt mono${tot.acc < 0 ? " neg" : ""}">${usd2(tot.acc)}</td></tr>`
+    + `<tr><td colspan="6"><b>Net Outstanding</b></td><td class="amt mono"><b>${usd2(tot.net)}</b></td></tr>`;
+  // 2. per-party split (all parties) or the admin entry + history (one party)
+  if (!p) {
+    html += sec("By party", 7) + `<tr><th>Party</th><th>Source</th><th>Entered by</th><th>Entered on</th><th class="amt">Grand Total</th><th class="amt">On Account</th><th class="amt">Net Outstanding</th></tr>`
+      + rows.filter((r) => r.acc).sort((a, b) => b.acc - a.acc).map((r) => `<tr><td class="name" title="${esc(r.party)}"><button class="charge-link" data-acc-party="${esc(r.party)}">${esc(r.party)}</button></td>
+          <td>${r.accSource === "admin" ? "Entered ✎" : "SARFD"}</td><td>${r.accSource === "admin" ? esc(r.accBy || "") : dash}</td><td>${r.accSource === "admin" ? fmtD(r.accAt) : dash}</td>
+          <td class="amt mono">${usd2(r.total)}</td><td class="amt mono${r.accSigned < 0 ? " neg" : ""}">${usd2(r.accSigned)}</td><td class="amt mono">${usd2(r.net)}</td></tr>`).join("");
+  } else {
+    const note = fin.remarks.get(remKey(fin.side, p)) || {}, log = [...(note.onAccountLog || [])].reverse();
+    html += sec("Amount entered on the dashboard", 7) + `<tr><th>Date</th><th colspan="3">Entered by</th><th colspan="2">Change</th><th class="amt">Amount</th></tr>`;
+    if (note.onAccount != null && !log.length) html += `<tr><td>${fmtD(note.onAccountAt)}</td><td colspan="3">${esc(note.onAccountBy || "")}</td><td colspan="2">Current amount</td><td class="amt mono">${usd2(note.onAccount)}</td></tr>`;
+    html += log.map((l, i) => `<tr><td>${fmtD(l.at)}</td><td colspan="3">${esc(l.by || "")}</td><td colspan="2">${i === 0 ? "Current" : "Earlier"}${l.amount == null ? " — cleared, uses SARFD" : ""}</td>
+        <td class="amt mono">${l.amount == null ? dash : usd2(l.amount)}</td></tr>`).join("");
+    if (note.onAccount == null && !log.length) html += `<tr><td colspan="7" class="blank">Nothing entered — ${isAdmin() ? "use the pencil in the On Account cell to enter an amount" : "an admin can enter an amount"}.</td></tr>`;
+  }
+  // 3. unallocated vouchers in SARFD
+  html += sec(`${ap ? "Payments" : "Receipts and credit notes"} in SARFD not knocked off against an invoice`, 7)
+    + `<tr><th>Voucher No</th><th>Type</th><th>Date</th><th>${p ? "Reference / Narration" : "Party"}</th><th class="amt">Amount</th><th class="amt">Knocked off</th><th class="amt">On Account</th></tr>`
+    + (vouchers.map((v) => `<tr><td class="mono">${esc(v.voucherNo)}</td><td>${esc(v.type)}</td><td>${fmtD(v.date)}</td>
+        <td class="name" title="${esc(p ? [v.ref, v.narration].filter(Boolean).join(" · ") : v.party)}">${esc(p ? [v.ref, v.narration].filter(Boolean).join(" · ") : v.party) || dash}</td>
+        <td class="amt mono">${usd2(v.amount)}</td><td class="amt mono">${usd2(v.allocated)}</td><td class="amt mono">${usd2(v.onAccount)}</td></tr>`).join("")
+      || `<tr><td colspan="7" class="blank">None — SARFD has no unallocated ${ap ? "payments" : "receipts or credit notes"} for ${p ? "this party" : "SAR Global"}${p && rows[0]?.accSource === "admin" ? ", so the entered amount is used" : ""}.</td></tr>`);
+  $("fTable").innerHTML = html + "</tbody>";
+}
+$("fTable").addEventListener("click", (e) => { const b = e.target.closest("[data-acc-party]"); if (b) openAccDetail(b.dataset.accParty); });
 
 // ---- invoice pop-up
 function openFinDocs(title, pred) { fin.drill = { title, pred }; fin.drillQ = ""; $("fSearch").value = ""; $("finOverlay").classList.remove("hidden"); renderFinDocs(); $("fSearch").focus(); }
@@ -2352,11 +2403,19 @@ function renderFinDocs() {
     + `<tfoot><tr><td colspan="${ap ? 8 : 7}">Total (${n0(rows.length)})</td><td class="amt">${usd2(total)}</td><td></td></tr></tfoot>`;
 }
 function closeFinDocs() { $("finOverlay").classList.add("hidden"); fin.drill = null; }
-$("fSearch").oninput = (e) => { fin.drillQ = e.target.value; renderFinDocs(); };
+$("fSearch").oninput = (e) => { fin.drillQ = e.target.value; fin.drill.acc ? renderAccDetail() : renderFinDocs(); };
 $("fClose").onclick = closeFinDocs;
 $("finOverlay").onclick = (e) => { if (e.target === $("finOverlay")) closeFinDocs(); };
-$("fXlsx").onclick = () => writeXlsx(`${fin.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`,
-  [["Invoices", finDocRows().map(finDocRow), [40, 22, 20, 12, 12, 8, 12, 14, 14, 14, 18, 22, 10], 3]]);
+$("fXlsx").onclick = () => {
+  const file = `${fin.drill.title.replace(/[^\w]+/g, "_").slice(0, 80)}_${todayIso()}.xlsx`;
+  if (!fin.drill.acc) return writeXlsx(file, [["Invoices", finDocRows().map(finDocRow), [40, 22, 20, 12, 12, 8, 12, 14, 14, 14, 18, 22, 10], 3]]);
+  const p = fin.drill.party, rows = finRows().filter((r) => (!p || r.party === p) && (p || r.acc));
+  const parties = rows.map((r) => ({ Party: r.party, Source: r.accSource === "admin" ? "Entered" : r.accSource === "sarfd" ? "SARFD" : "", "Entered by": r.accSource === "admin" ? r.accBy || "" : "",
+    "Entered on": r.accSource === "admin" && r.accAt ? new Date(r.accAt) : "", "Grand Total": +r.total.toFixed(2), "On Account": +r.accSigned.toFixed(2), "Net Outstanding": +r.net.toFixed(2) }));
+  const vouchers = accVouchers().map((v) => ({ "Voucher No": v.voucherNo, Type: v.type, Date: v.date ? new Date(v.date + "T00:00") : "", Party: v.party, Reference: v.ref, Narration: v.narration,
+    Amount: v.amount, "Knocked off": v.allocated, "On Account": v.onAccount }));
+  writeXlsx(file, [["On Account", parties, [40, 10, 30, 14, 16, 16, 16], 3], ["SARFD vouchers", vouchers, [18, 22, 12, 36, 18, 40, 14, 14, 14], 2]]);
+};
 
 // ---- Excel helper: sheets = [[name, rows, column widths, date column index?]]
 const todayIso = () => new Date().toISOString().slice(0, 10);

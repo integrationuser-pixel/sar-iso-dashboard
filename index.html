@@ -262,7 +262,7 @@
   @media (max-width: 1200px) { .kpis.mr-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 640px) { .kpis.mr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .mr-pivot td:first-child { min-width: 220px; } }
 
-  /* ---------- tank inventory <30 days ---------- */
+  /* ---------- tank inventory ---------- */
   #invPage { align-content: start; }
   .kpis.inv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .inv-table th, .inv-table td { text-align: right; padding: 8px 10px; }
@@ -425,7 +425,7 @@
     </a>
     <a href="/" data-page="inv">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M8 21v-6h8v6M8 12h8"/></svg>
-      Tank Inventory &lt;30 days
+      Tank Inventory
     </a>
   </nav>
   <h4 class="hidden" id="adminHead">ADMIN</h4>
@@ -583,7 +583,7 @@
 <main id="invPage" class="hidden">
   <div class="alert hidden" id="invErr" role="alert"></div>
   <div class="card viewbar">
-    <div><h2>Tank Inventory &lt;30 days</h2><p class="sub" id="invSub">Loading…</p></div>
+    <div><h2>Tank Inventory</h2><p class="sub" id="invSub">Loading…</p></div>
     <div class="mr-controls">
       <label class="f">Country <select id="invCountry"><option value="">All countries</option></select></label>
     </div>
@@ -864,7 +864,7 @@ const state = {
   lines: [], lastSync: null, view: "monthly", periodKey: "",
   from: `${DEFAULT_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
   mode: store.get("sar.salesMode", "table") === "chart" ? "chart" : "table",
-  currency: store.get("sar.currency", "USD"), rate: store.get("sar.inrRate", 88),
+  currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
   detail: "billing", detailQ: "", detailAll: false, monthsOpen: new Set(),
   charges: new Set(store.get("sar.billingCharges", null) || DEFAULT_CHARGES), drill: null, drillQ: "", drillLimit: 200,
 };
@@ -884,6 +884,7 @@ function getToken() { return idToken && tokenValid(idToken) ? idToken : null; }
 
 function showLogin(message) {
   currentPage = "sales";
+  state.currency = "USD";
   idToken = null;
   for (const id of ["app", "side", "topbar", "backdrop"]) $(id).classList.add("hidden");
   $("side").classList.remove("open");
@@ -917,7 +918,7 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Sales Performance", mr: "M&R Operations", inv: "Tank Inventory <30 days", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Sales Performance", mr: "M&R Operations", inv: "Tank Inventory", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";
@@ -1031,7 +1032,8 @@ $("monthTo").onchange = (e) => {
 };
 $("from").onchange = (e) => { if (e.target.value) { state.from = e.target.value; render(); } };
 $("to").onchange = (e) => { if (e.target.value) { state.to = e.target.value; render(); } };
-$("currency").onclick = (e) => { const c = e.target.closest("button")?.dataset.c; if (c) { state.currency = c; store.set("sar.currency", c); render(); } };
+$("currency").onclick = (e) => { const c = e.target.closest("button")?.dataset.c; if (c) { state.currency = c; render(); } };
+try { localStorage.removeItem("sar.currency"); } catch {}   // older versions remembered INR across visits
 $("rate").onchange = (e) => { const r = parseFloat(e.target.value); if (r > 0) { state.rate = r; store.set("sar.inrRate", r); render(); } };
 $("detailTabs").onclick = (e) => { const t = e.target.closest("button")?.dataset.t; if (t) { state.detail = t; state.detailQ = ""; state.detailAll = false; $("detailSearch").value = ""; render(); } };
 $("detailSearch").oninput = (e) => { state.detailQ = e.target.value; renderTable(); };
@@ -1609,7 +1611,7 @@ $("mrPivotXlsx").onclick = () => {
 };
 
 // ---- Depot Report: tanks at a depot (empty allocated / available, cleaning, repair, survey)
-// (the ">45 days" depot billing and "<30 days" inventory views are built separately, so no ageing here)
+// (ageing lives in the Tank Inventory report, so none here)
 const DEPOT_COLS = [["alloc", "Allocated"], ["clean", "Under Cleaning"], ["repair", "Under Repair"], ["survey", "Under Survey"], ["avail", "Available"]];
 function depotCol(t) {
   if (t.bucket === "Under Cleaning") return "clean";
@@ -1733,7 +1735,7 @@ $("tXlsx").onclick = () => {
     [["Tanks", rows, [14, 6, 10, 30, 24, 30, 16, 13, 10, 34, 34, 22, 22, 18, 12, 16, 20, 20], 7]]);
 };
 
-// ============================================================ Tank Inventory <30 days
+// ============================================================ Tank Inventory
 // Tanks at a depot (latest movement: empty allocated / available, cleaning, repair, survey), by depot.
 // Depot Country / Port / Agent / Billing Party are worked out from SARFD by the API (mr.data.depots).
 const INV_COLS = [["al", "AL"], ["av30", "<30"], ["av60", ">30"], ["av90", ">60"], ["av91", ">90"], ["uc", "UC"], ["ur", "UR"], ["us", "US"]];

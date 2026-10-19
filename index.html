@@ -38,7 +38,7 @@
          font-size: 12.5px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; color: #9AB0D4; }
   .side h4 { margin: 12px 18px 6px; font-size: 10.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #7C90B4; }
   .side nav { padding: 0 10px; }
-  .side nav a { position: relative; display: flex; align-items: center; gap: 9px; margin-bottom: 2px; padding: 9px 10px; border-radius: 8px; white-space: nowrap;
+  .side nav a { position: relative; display: flex; align-items: center; gap: 9px; margin-bottom: 2px; padding: 9px 10px; border-radius: 8px; line-height: 1.25;
                 color: #B7C4DC; text-decoration: none; font-size: 13px; font-weight: 600; transition: background .15s, color .15s, transform .12s; }
   .side nav a svg { width: 16px; height: 16px; flex: none; opacity: .75; }
   .side nav a:hover { background: rgb(255 255 255 / .08); color: #fff; transform: translateX(2px); }
@@ -447,7 +447,7 @@
     </a>
     <a href="/" data-page="inv">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M8 21v-6h8v6M8 12h8"/></svg>
-      Tank Inventory
+      Current Tank Inventory Status
     </a>
     <a href="/" data-page="dep">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 17h20l-2 4H4z"/><rect x="6" y="9" width="12" height="6" rx="3"/><path d="M12 9V5M9 5h6"/></svg>
@@ -609,7 +609,7 @@
 <main id="invPage" class="hidden">
   <div class="alert hidden" id="invErr" role="alert"></div>
   <div class="card viewbar">
-    <div><h2>Tank Inventory</h2><p class="sub" id="invSub">Loading…</p></div>
+    <div><h2>Current Tank Inventory Status</h2><p class="sub" id="invSub">Loading…</p></div>
     <div class="mr-controls">
       <label class="f">Country <select id="invCountry"><option value="">All countries</option></select></label>
     </div>
@@ -980,7 +980,7 @@ async function api(path, body) {
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 // ============================================================ sidebar + pages
-const PAGES = { sales: "Sales Performance", mr: "M&R Operations", inv: "Tank Inventory", dep: "Tank Deployment", usage: "Usage Analytics", admin: "Admin Panel" };
+const PAGES = { sales: "Sales Performance", mr: "M&R Operations", inv: "Current Tank Inventory Status", dep: "Tank Deployment", usage: "Usage Analytics", admin: "Admin Panel" };
 const isAdmin = () => state.me?.role === "admin";
 // The page is kept in memory so the address bar always stays at the site root (no #sales / #admin).
 let currentPage = "sales";
@@ -1937,7 +1937,7 @@ $("invXlsx").onclick = () => {
   const groups = invGroups();
   for (const g of groups) { g.rows.forEach((r) => out.push(line(g.country, r))); out.push(line(`${g.country} Total`, g.tot)); }
   out.push(line("Grand Total", invSum(groups.map((g) => g.tot))));
-  writeXlsx(`SAR_Tank_Inventory_${todayIso()}.xlsx`, [["Tank Inventory", out, [22, 30, 16, 26, 26, 6, 8, 8, 8, 8, 6, 6, 6, 12]]]);
+  writeXlsx(`SAR_Current_Tank_Inventory_Status_${todayIso()}.xlsx`, [["Current Tank Inventory Status", out, [22, 30, 16, 26, 26, 6, 8, 8, 8, 8, 6, 6, 6, 12]]]);
 };
 
 // ============================================================ Tank Deployment

@@ -194,6 +194,9 @@
   .pivot tr.lv1 td.dim { color: var(--ink-soft); }
   .pivot tbody tr:hover { background: #EFF4FF; }
   .pivot tfoot td.dim { background: var(--grand); z-index: 4; }
+  .pivot tfoot tr.recon td, .pivot tfoot tr.recon td.dim { background: #F6F8FC; font-weight: 600; color: var(--ink-soft); }
+  .pivot tfoot tr.grand-total td, .pivot tfoot tr.grand-total td.dim { background: #E4EBFA; }
+  tbody tr.recon td { background: #F6F8FC; font-style: italic; color: var(--ink-soft); }
   .tg { width: 16px; height: 16px; padding: 0; margin-right: 8px; border: 0; border-radius: 4px; background: var(--grad); color: #fff;
         font: 700 12px/16px "Plus Jakarta Sans", sans-serif; vertical-align: -2px; }
   .tg-sp { display: inline-block; width: 24px; }
@@ -977,11 +980,14 @@ function trendTable(lines, key, buckets, g) {
 const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || l.category === f.category)
   && (f.agent === undefined || l.agent === f.agent) && (!f.lane || l.lane === f.lane)
   && (f.charge === undefined || l.charge === f.charge) && (f.shipper === undefined || l.shipper === f.shipper)
-  && (f.pol === undefined || l.pol === f.pol) && (f.pod === undefined || l.pod === f.pod);
+  && (f.pol === undefined || l.pol === f.pol) && (f.pod === undefined || l.pod === f.pod)
+  && (!f.noLane || !l.lane) && (!f.agentsIn || f.agentsIn.has(l.agent)) && (!f.lanesIn || f.lanesIn.has(l.lane)) && (!f.notCharges || !f.notCharges.has(l.charge));
 
 // ============================================================ state
 const VIEWS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"], ["custom", "Custom Range"]];
 // Billing Details shows these charges until the viewer changes the Charges filter.
+const NO_LANE = "(No trade lane — invoices without a BL)";
+let detailOthers = [];
 const DEFAULT_CHARGES = ["TANK RENT", "IMPORT DETENTION CHARGES", "LEASE RENT CHARGES", "EXPORT DETENTION CHARGES", "OCEAN FREIGHT CHARGES"];
 // Default: Monthly view from April 2026 to the end of the current month.
 const DEFAULT_FROM_MONTH = "2026-04";
@@ -1226,7 +1232,7 @@ function render() {
     renderTable();
   }
 
-  $("footnote").textContent = "Source: SARFD tblInvoice (sales, sub-lease, sundry, M&R invoices and debit notes; credit notes subtracted). Amounts in USD"
+  $("footnote").textContent = "Source: SARFD tblInvoice — SAR Global PTE Ltd sales, sub-lease, sundry and M&R invoices, credit notes subtracted (debit notes and proformas excluded). Billing Details, Agent and Trade Lane tables all end on Total Revenue. Amounts in USD"
     + (state.currency === "INR" ? `, shown in INR at ₹${state.rate}/USD` : "") + "."
     + (state.lastSync ? ` Last invoice sync ${new Date(state.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.` : "");
 }
@@ -1303,30 +1309,44 @@ function renderTable() {
   if (billing) return renderPivot();
   const gr = g(), buckets = bucketRange(state.from, state.to, gr), isAgent = state.detail === "agent";
   const dim = isAgent ? "Agent" : "Trade Lane";
-  const { rows, totals } = trendTable(inPeriod(), isAgent ? (l) => l.agent : (l) => l.lane, buckets, gr);
+  // Every revenue line is in a row, so the rows add up to Total Revenue: lines without a trade lane
+  // (no BL — sub-lease, sundry …) get their own row, and agents beyond the top 15 are summed into "Other agents".
+  const { rows: all, totals } = trendTable(inPeriod(), isAgent ? (l) => l.agent : (l) => l.lane || NO_LANE, buckets, gr);
+  const rows = [...all.filter((r) => r.name !== NO_LANE), ...all.filter((r) => r.name === NO_LANE)];
   const q = state.detailQ.toLowerCase();
   const filtered = q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
-  const shown = state.detailAll ? filtered : filtered.slice(0, 15);
+  const main = filtered.filter((r) => r.name !== NO_LANE), noLane = filtered.filter((r) => r.name === NO_LANE);
+  let shown = state.detailAll ? main : main.slice(0, 15);
+  if (!state.detailAll && main.length > 15) {
+    const rest = main.slice(15), other = { name: `Other ${dim.toLowerCase()}s (${rest.length})`, cells: {}, total: 0, others: rest.map((r) => r.name) };
+    for (const r of rest) { other.total += r.total; for (const [b, v] of Object.entries(r.cells)) other.cells[b] = (other.cells[b] || 0) + v; }
+    shown = [...shown, other];
+  }
+  shown = [...shown, ...noLane];
+  detailOthers = shown.find((r) => r.others)?.others || [];
 
   $("detailTitle").textContent = `${dim} Detail`;
   $("detailSub").textContent = `Net revenue per ${gr}; click any number for the invoices behind it`;
   $("detailSearch").placeholder = `Search ${dim.toLowerCase()}…`;
   $("detailCount").textContent = `${filtered.length} ${dim.toLowerCase()}s`;
   const cell = (v, name, b) => `<td>${v ? `<button class="num${v < 0 ? " neg" : ""}" data-n="${esc(name ?? "")}" data-b="${b ?? ""}">${money(v)}</button>` : '<span class="dash">–</span>'}</td>`;
+  const rowName = (r) => (r.others ? "__others" : r.name);
   $("detailTable").className = "";
   $("detailTable").innerHTML =
     `<thead><tr><th>${dim}</th>${buckets.map((b) => `<th>${bucketLabel(b, gr)}</th>`).join("")}<th>Total</th></tr></thead>
-     <tbody>${shown.map((r) => `<tr><td class="name" title="${esc(r.name)}">${esc(r.name)}</td>${buckets.map((b) => cell(r.cells[b], r.name, b)).join("")}${cell(r.total, r.name, "")}</tr>`).join("")}</tbody>
-     <tfoot><tr><td>TOTAL</td>${buckets.map((b) => cell(totals.cells[b], "", b)).join("")}${cell(totals.total, "", "")}</tr></tfoot>`;
-  $("detailMore").classList.toggle("hidden", filtered.length <= 15);
-  $("detailMore").textContent = state.detailAll ? "Show top 15" : `Show all ${filtered.length}`;
+     <tbody>${shown.map((r) => `<tr${r.others || r.name === NO_LANE ? ' class="recon"' : ""}><td class="name" title="${esc(r.name)}">${esc(r.name)}</td>${buckets.map((b) => cell(r.cells[b], rowName(r), b)).join("")}${cell(r.total, rowName(r), "")}</tr>`).join("")}</tbody>
+     <tfoot><tr><td>TOTAL${q ? "" : " = Total Revenue"}</td>${buckets.map((b) => cell(totals.cells[b], "", b)).join("")}${cell(totals.total, "", "")}</tr></tfoot>`;
+  $("detailMore").classList.toggle("hidden", main.length <= 15);
+  $("detailMore").textContent = state.detailAll ? "Show top 15" : `Show all ${main.length}`;
 }
 $("detailTable").onclick = (e) => {
   if (state.detail === "billing") return pivotClick(e);
   const b = e.target.closest("button.num"); if (!b) return;
   const name = b.dataset.n || null, bucket = b.dataset.b || null, isAgent = state.detail === "agent";
-  const what = name ?? (isAgent ? "All agents" : "All lanes");
-  openDrill({ title: what + (bucket ? ` — ${bucketLabel(bucket, g())}` : ""), ...(name ? (isAgent ? { agent: name } : { lane: name }) : {}), ...(bucket ? bucketSpan(bucket) : {}) });
+  const what = name === "__others" ? `Other ${isAgent ? "agents" : "trade lanes"}` : name ?? (isAgent ? "All agents" : "All lanes");
+  const who = !name ? {} : name === "__others" ? (isAgent ? { agentsIn: new Set(detailOthers) } : { lanesIn: new Set(detailOthers) })
+    : name === NO_LANE ? { noLane: true } : isAgent ? { agent: name } : { lane: name };
+  openDrill({ title: what + (bucket ? ` — ${bucketLabel(bucket, g())}` : ""), ...who, ...(bucket ? bucketSpan(bucket) : {}) });
 };
 
 // ============================================================ billing details pivot
@@ -1413,12 +1433,28 @@ function renderPivot() {
     return `<tr class="lv0">${cells}${pivotCols.map((c, ci) => val(c.grand ? n.total : n.cells[c.key], i, ci)).join("")}</tr>`;
   }).join("");
   pivotRows.push(root);
-  const foot = `<tr><td class="dim last" style="${CHARGE_COL}">Grand Total</td>${pivotCols.map((c, ci) => val(c.grand ? root.total : root.cells[c.key], pivotRows.length - 1, ci)).join("")}</tr>`;
+  // Charges not ticked in the Charges filter are added back below, so the table ends on Total Revenue.
+  const q = state.detailQ.toLowerCase();
+  const otherLines = inPeriod().filter((l) => !state.charges.has(l.charge) && (!q || [l.charge, l.shipper, l.agent, l.pol, l.pod].some((v) => (v || "").toLowerCase().includes(q))));
+  const other = buildPivot(otherLines).root, nOther = new Set(otherLines.map((l) => l.charge)).size;
+  const all = { cells: {}, total: root.total + other.total };
+  for (const c of pivotCols) if (!c.grand) all.cells[c.key] = (root.cells[c.key] || 0) + (other.cells[c.key] || 0);
+  const footRow = (label, node, cls = "") => { pivotRows.push(node); const i = pivotRows.length - 1;
+    return `<tr class="${cls}"><td class="dim last" style="${CHARGE_COL}">${label}</td>${pivotCols.map((c, ci) => val(c.grand ? node.total : node.cells[c.key], i, ci)).join("")}</tr>`; };
+  root.label = "Selected charges";
+  let foot = `<tr><td class="dim last" style="${CHARGE_COL}">Total — selected charges</td>${pivotCols.map((c, ci) => val(c.grand ? root.total : root.cells[c.key], pivotRows.length - 1, ci)).join("")}</tr>`;
+  if (nOther) {
+    foot += footRow(`Other charges (${nOther} not selected)`, Object.assign(other, { label: "Other charges", filter: { notCharges: new Set(state.charges) } }), "recon");
+    foot += footRow(q ? "Total — all charges" : "Total Revenue", Object.assign(all, { label: "All charges", filter: {} }), "grand-total");
+  }
 
   $("detailTable").className = "pivot";
   $("detailTable").innerHTML = `<thead><tr>${head1}</tr>${head2 ? `<tr>${head2}</tr>` : ""}</thead><tbody>${body || `<tr><td colspan="${1 + pivotCols.length}" style="text-align:center;padding:24px;color:#94a3b8">No billing in this period</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
   const rows = $("detailTable").tHead.rows;
   if (rows[1]) { const h = rows[0].getBoundingClientRect().height; for (const th of rows[1].cells) th.style.top = `${h}px`; }
+  // stack the footer rows when it has more than one (each stays frozen above the one below)
+  const fr = [...$("detailTable").tFoot.rows]; let off = 0;
+  for (let i = fr.length - 1; i >= 0; i--) { for (const td of fr[i].cells) td.style.bottom = `${off}px`; off += fr[i].getBoundingClientRect().height; }
 }
 
 function billingLines() {
@@ -1480,7 +1516,7 @@ function pivotClick(e) {
   if (t.dataset.charge) { openChargeBreakdown(pivotRows[+t.dataset.charge].name); return false; }
   if (t.dataset.r) {
     const n = pivotRows[+t.dataset.r], col = pivotCols[+t.dataset.c];
-    const name = n.filter ? PIVOT_LEVELS.filter(([k]) => k in n.filter).map(([k]) => n.filter[k] || "(blank)").join(" › ") : "All charges";
+    const name = n.label || (n.filter ? PIVOT_LEVELS.filter(([k]) => k in n.filter).map(([k]) => n.filter[k] || "(blank)").join(" › ") : "All charges");
     const when = col.grand ? "" : ` — ${col.week ? `Week ${col.week}, ` : ""}${monthLabel(col.m)}`;
     openDrill({ title: name + when, ...(n.filter || {}), ...pivotColRange(col) });
     return false;

@@ -45,7 +45,9 @@
   .side nav a[aria-current="page"] { background: rgb(255 255 255 / .14); color: #fff; }
   .side nav a[aria-current="page"] svg { opacity: 1; }
   .perf-blank { padding: 80px 16px; text-align: center; font-size: 14px; color: var(--ink-soft); }
-  .side nav .chev { margin-left: auto; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); opacity: .6; transition: transform .15s; }
+  .side nav .chev-btn { margin: -6px -6px -6px auto; padding: 9px 9px; border-radius: 6px; display: flex; }
+  .side nav .chev-btn:hover { background: rgb(255 255 255 / .12); }
+  .side nav .chev { width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); opacity: .6; transition: transform .15s; }
   .side nav a[aria-expanded="true"] .chev { transform: rotate(45deg); }
   .side nav a.sub { padding: 6px 10px 6px 35px; font-size: 12px; font-weight: 500; color: #9AB0D4; }
   .side nav a.sub[aria-current="true"] { background: rgb(255 255 255 / .08); color: #fff; font-weight: 600; }
@@ -508,7 +510,7 @@
   <nav id="sideNav">
     <a href="/" data-page="sales">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-      Performance<span class="chev" aria-hidden="true"></span>
+      Performance<span class="chev-btn" role="button" tabindex="0" aria-label="Show or hide the Performance reports" title="Show / hide"><span class="chev" aria-hidden="true"></span></span>
     </a>
     <div class="subnav hidden" id="perfSub">
       <a href="/" class="sub" data-page="sales" data-detail="billing">Billing Details</a>
@@ -1164,25 +1166,29 @@ const syncTopbarH = () => document.documentElement.style.setProperty("--topbar-h
 new ResizeObserver(syncTopbarH).observe($("topbar"));
 addEventListener("resize", syncTopbarH);
 function openMenu() { $("side").classList.add("open"); $("backdrop").classList.remove("hidden"); }
+$("sideNav").addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.closest(".chev-btn")) { e.preventDefault(); e.stopPropagation(); perfOpen = !perfOpen; markPerfSub(); }
+});
 function closeMenu() { $("side").classList.remove("open"); $("backdrop").classList.add("hidden"); }
 $("menuBtn").onclick = openMenu;
 $("backdrop").onclick = closeMenu;
 for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
+  if (e.target.closest(".chev-btn")) { e.preventDefault(); perfOpen = !perfOpen; markPerfSub(); return; }   // arrow: only show / hide the sub-items
   const a = e.target.closest("a[data-page]"); if (!a) return;
   e.preventDefault();
   const perf = a.dataset.page === "sales";
   if (a.dataset.detail) {   // Performance sub-item: open that table
     Object.assign(state, { detail: a.dataset.detail, mode: "table", detailQ: "", detailAll: false }); $("detailSearch").value = "";
-  } else if (perf) state.detail = null;   // Performance itself: blank page
+  } else if (perf) { state.detail = null; perfOpen = true; }   // Performance itself: blank page, sub-items shown
   route(a.dataset.page);
   if (perf && state.lines.length) render();
   if (a.dataset.detail) $("tableView").scrollIntoView({ behavior: "smooth", block: "start" });
 };
 // Billing Details / Agent Detail / Trade Lane Detail sit under Performance in the sidebar (table view only).
+let perfOpen = false;   // Performance sub-items start hidden; the arrow next to Performance shows / hides them
 function markPerfSub(page = currentPage) {
-  // the breakdown opens under Performance while that page is shown
-  $("perfSub").classList.toggle("hidden", page !== "sales");
-  document.querySelector('.side nav a[data-page="sales"]:not(.sub)').setAttribute("aria-expanded", page === "sales");
+  $("perfSub").classList.toggle("hidden", !perfOpen);
+  document.querySelector('.side nav a[data-page="sales"]:not(.sub)').setAttribute("aria-expanded", perfOpen);
   for (const a of document.querySelectorAll(".side nav a.sub"))
     if (page === "sales" && state.mode === "table" && a.dataset.detail === state.detail) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current");
 }

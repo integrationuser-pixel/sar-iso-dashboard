@@ -561,6 +561,8 @@
   <div class="page-head hidden" id="finHead">
     <div class="ph-text"><h2 id="finTitle">Accounts Receivable</h2><p class="sub" id="finSub">Loading…</p></div>
     <div class="ph-controls">
+      <label class="f">From <select id="finFrom" aria-label="Invoices from month"></select></label>
+      <label class="f">To <select id="finTo" aria-label="Invoices to month"></select></label>
       <div class="view-toggle" id="finTabs" role="group" aria-label="Finance report">
         <button data-side="ar">Accounts Receivable</button><button data-side="ap">Accounts Payable</button>
       </div>
@@ -947,7 +949,7 @@ const shortDate = (s) => { const d = toDate(s); return `${d.getUTCDate()} ${MONT
 
 function periodOptions(view, dates) {
   const map = new Map();
-  for (const s of view === "weekly" ? [...dates, iso(new Date())] : dates) {   // weekly always offers the current month
+  for (const s of view === "weekly" ? [...dates, iso(new Date()), `${FIRST_MONTH}-01`] : dates) {   // weekly always offers the current month and Jan-26
     const d = toDate(s), y = d.getUTCFullYear(), m = d.getUTCMonth();
     let o;
     if (view === "monthly") o = { key: `${y}-${m}`, label: `${MONTHS[m]} ${yy(y)}`, from: iso(new Date(Date.UTC(y, m, 1))), to: lastOfMonth(y, m) };
@@ -1038,6 +1040,7 @@ let detailOthers = [];
 const DEFAULT_CHARGES = ["TANK RENT", "IMPORT DETENTION CHARGES", "LEASE RENT CHARGES", "EXPORT DETENTION CHARGES", "OCEAN FREIGHT CHARGES"];
 // Default: Monthly view from February 2026 (SAR Global's first invoices) to the end of the current month.
 const DEFAULT_FROM_MONTH = "2026-02";
+const FIRST_MONTH = "2026-01";   // earliest month offered in the month pickers (Sales, Tank Deployment, Finance)
 const thisMonth = () => iso(new Date()).slice(0, 7);
 const monthEnd = (m) => lastOfMonth(+m.slice(0, 4), +m.slice(5, 7) - 1);
 const state = {
@@ -1235,7 +1238,7 @@ function renderFilters() {
   $("periodWrap").classList.toggle("hidden", custom || monthly);
   $("monthFromWrap").classList.toggle("hidden", !monthly); $("monthToWrap").classList.toggle("hidden", !monthly);
   if (monthly) {
-    const first = state.lines.reduce((m, l) => (l.date < m ? l.date : m), `${DEFAULT_FROM_MONTH}-01`).slice(0, 7);
+    const first = state.lines.reduce((m, l) => (l.date < m ? l.date : m), `${FIRST_MONTH}-01`).slice(0, 7);
     const months = []; for (let m = first; m <= thisMonth(); m = addDays(`${m}-28`, 7).slice(0, 7)) months.push(m);
     const opts = (sel) => months.map((m) => `<option value="${m}"${m === sel ? " selected" : ""}>${MONTHS[+m.slice(5, 7) - 1]}-${m.slice(2, 4)}</option>`).join("");
     $("monthFrom").innerHTML = opts(state.from.slice(0, 7)); $("monthTo").innerHTML = opts(state.to.slice(0, 7));
@@ -2193,10 +2196,11 @@ async function loadDep() {
   try {
     dep.data = await api("/api/mongo", { dataset: "deploy" });
     const months = dep.data.bls.map((b) => b.date.slice(0, 7)).sort();
-    const first = months[0] || thisMonth(), last = thisMonth() > (months.at(-1) || "") ? thisMonth() : months.at(-1);
+    const dataFirst = months[0] || thisMonth(), last = thisMonth() > (months.at(-1) || "") ? thisMonth() : months.at(-1);
+    const first = dataFirst < FIRST_MONTH ? dataFirst : FIRST_MONTH;   // pickers start at Jan-26; the default stays the first month with BLs
     const all = monthsBetween(first, last);
     dep.months = all;
-    if (!dep.from || !all.includes(dep.from)) { dep.from = first; dep.to = last; if (dep.period === "week") dep.from = dep.to = depCurrentMonth(); }
+    if (!dep.from || !all.includes(dep.from)) { dep.from = dataFirst; dep.to = last; if (dep.period === "week") dep.from = dep.to = depCurrentMonth(); }
     if (!dep.to || !all.includes(dep.to)) dep.to = last;
     depFillMonths();
     renderDep();
@@ -2285,7 +2289,7 @@ $("depPeriod").onclick = (e) => {
   dep.period = b.dataset.p; store.set("sar.depPeriod", dep.period);
   if (dep.months.length) {
     if (dep.period === "week") { dep.monthRange = { from: dep.from, to: dep.to }; dep.from = dep.to = depCurrentMonth(); }
-    else { const r = dep.monthRange || { from: dep.months[0], to: dep.months.at(-1) }; dep.from = r.from; dep.to = r.to; }
+    else { const r = dep.monthRange || { from: dep.months.find((m) => (dep.data?.bls || []).some((b) => b.date.startsWith(m))) || dep.months[0], to: dep.months.at(-1) }; dep.from = r.from; dep.to = r.to; }
     depFillMonths();
   }
   renderDep();
@@ -2355,7 +2359,7 @@ $("bXlsx").onclick = () => {
 // Age = days past the due date as of today: Not Due up to 30, then >30, >60, >90 days.
 const FIN_AGES = [["nd", "Not Due"], ["d30", "Overdue > 30 days"], ["d60", "Overdue > 60 days"], ["d90", "Overdue > 90 days"]];
 const FIN_SIDES = { ar: { title: "Accounts Receivable", table: "Outstanding Amount", party: "Customer" }, ap: { title: "Accounts Payable", table: "Payable Amount", party: "Vendor" } };
-const fin = { data: null, remarks: new Map(), side: store.get("sar.finSide", "ar"), q: "", drill: null, drillQ: "", editing: null, editingAcc: null };
+const fin = { data: null, remarks: new Map(), side: store.get("sar.finSide", "ar"), from: "", to: "", months: [], q: "", drill: null, drillQ: "", editing: null, editingAcc: null };
 // Finance tables show whole dollars; the Excel exports keep cents.
 const usd2 = (v) => (Math.round(v) < 0 ? "−" : "") + "$" + Math.abs(Math.round(v)).toLocaleString("en-US");
 const overdueDays = (d) => Math.floor((Date.now() - new Date(d.due + "T00:00")) / DAY_MS);
@@ -2370,6 +2374,7 @@ async function loadFin() {
     const { results } = await api("/api/mongo-batch", { requests: [{ dataset: "finance" }, { dataset: "financeRemarks" }] });
     for (const r of results) if (!r.ok) throw new Error(r.error);
     fin.data = results[0].data; setFinRemarks(results[1].data);
+    finFillMonths();
     renderFin();
   } catch (e) {
     if (e.message === "signed out" || e.message === "no access") return;
@@ -2381,14 +2386,31 @@ function setFinRemarks(list) { fin.remarks = new Map(list.map((r) => [remKey(r.s
 $("finTabs").onclick = (e) => { const b = e.target.closest("button[data-side]"); if (!b) return; fin.side = b.dataset.side; store.set("sar.finSide", fin.side); fin.editing = null; fin.editingAcc = null; renderFin(); };
 $("finSearch").oninput = (e) => { fin.q = e.target.value; renderFin(); };
 
-const finDocs = () => (fin.data?.docs || []).filter((d) => d.side === fin.side);
+// Invoice-date month range: defaults to every month (Jan-26 or the oldest open invoice, to the current month).
+function finFillMonths() {
+  const ms = (fin.data?.docs || []).map((d) => d.date.slice(0, 7)).sort();
+  const first = ms[0] && ms[0] < FIRST_MONTH ? ms[0] : FIRST_MONTH, last = ms.at(-1) > thisMonth() ? ms.at(-1) : thisMonth();
+  const all = monthsBetween(first, last), wasAll = !fin.months.length || (fin.from === fin.months[0] && fin.to === fin.months.at(-1));
+  fin.months = all;
+  if (wasAll || !all.includes(fin.from)) fin.from = first;
+  if (wasAll || !all.includes(fin.to)) fin.to = last;
+  const opts = (sel) => all.map((m) => `<option value="${m}"${m === sel ? " selected" : ""}>${monthLabel(m)}</option>`).join("");
+  $("finFrom").innerHTML = opts(fin.from); $("finTo").innerHTML = opts(fin.to);
+}
+$("finFrom").onchange = (e) => { fin.from = e.target.value; if (fin.to < fin.from) { fin.to = fin.from; $("finTo").value = fin.to; } renderFin(); };
+$("finTo").onchange = (e) => { fin.to = e.target.value; if (fin.from > fin.to) { fin.from = fin.to; $("finFrom").value = fin.from; } renderFin(); };
+const finRanged = () => fin.months.length > 0 && (fin.from !== fin.months[0] || fin.to !== fin.months.at(-1));
+const finInRange = (d) => { const m = d.date.slice(0, 7); return (!fin.from || m >= fin.from) && (!fin.to || m <= fin.to); };
+const finDocs = () => (fin.data?.docs || []).filter((d) => d.side === fin.side && finInRange(d));
 function finRows() {
   const q = fin.q.toLowerCase(), m = new Map();
   const row = (party) => { let r = m.get(party); if (!r) m.set(party, r = { party, total: 0, n: 0, ...Object.fromEntries(FIN_AGES.map(([k]) => [k, 0])) }); return r; };
   for (const d of finDocs()) { const r = row(d.party); r[finAge(d)] += d.outstanding; r.total += d.outstanding; r.n++; }
-  // parties with money on account but no open invoice still count
-  for (const p of Object.keys(fin.data?.onAccount?.[fin.side] || {})) row(p);
-  for (const [, n] of fin.remarks) if (n.side === fin.side && n.onAccount != null) row(n.party);
+  // parties with money on account but no open invoice still count (not when a month range is picked)
+  if (!finRanged()) {
+    for (const p of Object.keys(fin.data?.onAccount?.[fin.side] || {})) row(p);
+    for (const [, n] of fin.remarks) if (n.side === fin.side && n.onAccount != null) row(n.party);
+  }
   const rows = [...m.values()].map((r) => {
     const note = fin.remarks.get(remKey(fin.side, r.party)) || {};
     const auto = fin.data?.onAccount?.[fin.side]?.[r.party] || 0;
@@ -2406,11 +2428,13 @@ function renderFin() {
   $("finTitle").textContent = S.title; $("finTableTitle").textContent = S.table;
   const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   const synced = fin.data.lastSync ? new Date(fin.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
-  $("finSub").textContent = `Open invoices of SAR Global PTE Ltd · ageing as on ${today} · invoices up to ${fin.data.dataTo ? shortDate(fin.data.dataTo) : "—"} · synced ${synced}`;
+  const ranged = finRanged();
+  $("finSub").textContent = `Open invoices of SAR Global PTE Ltd${ranged ? ` dated ${monthLabel(fin.from)} – ${monthLabel(fin.to)}` : ""} · ageing as on ${today} · invoices up to ${fin.data.dataTo ? shortDate(fin.data.dataTo) : "—"} · synced ${synced}`;
   $("finSub").title = $("finSub").textContent;
   $("finFoot").innerHTML = `Ageing columns = open invoices (invoice amount less what has been knocked off against them), aged by days past the due date: Not Due up to 30 days, then over 30, 60 and 90 days.
     <b>On Account</b> = ${fin.side === "ap" ? "payments made" : "receipts and credit notes received"} but not yet knocked off against an invoice — from SARFD, or entered by an admin (marked ✎) where SARFD doesn't have them.
-    <b>Net Outstanding</b> = Grand Total less On Account: the real ${fin.side === "ap" ? "amount payable" : "amount receivable"}.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}`;
+    <b>Net Outstanding</b> = Grand Total less On Account: the real ${fin.side === "ap" ? "amount payable" : "amount receivable"}.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}
+    From / To pick open invoices by invoice date; On Account always shows the party's full figure.`;
 
   const rows = finRows(), admin = isAdmin(), docs = finDocs();
   const sum = { total: 0, accSigned: 0, net: 0, ...Object.fromEntries(FIN_AGES.map(([k]) => [k, 0])) };
@@ -2440,7 +2464,7 @@ function renderFin() {
       <td class="txt rem" title="${esc(r.remark)}">${rem}</td></tr>`;
   }).join("");
   $("finTable").innerHTML = `<thead><tr><th class="txt">${S.party}</th>${FIN_AGES.map(([, l]) => `<th>${l}</th>`).join("")}<th class="gt">Grand Total</th><th class="acc">On Account</th><th class="net">Net Outstanding</th><th class="txt">Remarks</th></tr></thead>
-    <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">No open invoices</td></tr>'}</tbody>
+    <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
     <tfoot><tr><td class="txt">Grand Total (${n0(rows.length)})</td>${FIN_AGES.map(([k]) => `<td class="${sum[k] < 0 ? "neg" : ""}">${usd2(sum[k])}</td>`).join("")}<td class="gt">${usd2(sum.total)}</td>
       <td class="acc${sum.accSigned < 0 ? " neg" : ""}">${usd2(sum.accSigned)}</td><td class="net${sum.net < 0 ? " neg" : ""}">${usd2(sum.net)}</td><td></td></tr></tfoot>`;
   const inp = $("finTable").querySelector(".rem-input"); if (inp) { inp.focus(); inp.select(); }

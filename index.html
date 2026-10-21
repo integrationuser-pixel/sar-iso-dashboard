@@ -2446,10 +2446,10 @@ function renderFin() {
     + card("Overdue > 90 days", sum.d90, `${n0(cnt.d90 || 0)} invoices${pctOf(sum.d90)}`, "#C24A2E", 'data-age="d90"');
 
   const cell = (v, party, age, cls = "") => `<td class="${cls}${v < 0 ? " neg" : ""}">${Math.abs(v) >= 0.005 ? `<button class="num" data-p="${esc(party)}"${age ? ` data-age="${age}"` : ""}>${usd2(v)}</button>` : ""}</td>`;
-  const body = rows.map((r) => `<tr><td class="txt party" title="${esc(r.party)}">${esc(r.party)}</td>${FIN_AGES.map(([k]) => cell(r[k], r.party, k)).join("")}${cell(r.total, r.party, "", "gt")}</tr>`).join("");
-  $("finTable").innerHTML = `<thead><tr><th class="txt">${S.party}</th>${FIN_AGES.map(([, l]) => `<th>${l}</th>`).join("")}<th class="gt">Grand Total</th></tr></thead>
+  const body = rows.map((r) => `<tr><td class="txt party" title="${esc(r.party)}">${esc(r.party)}</td>${cell(r.total, r.party, "", "gt")}${FIN_AGES.map(([k]) => cell(r[k], r.party, k)).join("")}</tr>`).join("");   // Grand Total right after the party
+  $("finTable").innerHTML = `<thead><tr><th class="txt">${S.party}</th><th class="gt">Grand Total</th>${FIN_AGES.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
     <tbody>${body || '<tr><td colspan="6" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
-    <tfoot><tr><td class="txt">Grand Total (${n0(rows.length)})</td>${FIN_AGES.map(([k]) => `<td class="${sum[k] < 0 ? "neg" : ""}">${usd2(sum[k])}</td>`).join("")}<td class="gt">${usd2(sum.total)}</td></tr></tfoot>`;
+    <tfoot><tr><td class="txt">Grand Total (${n0(rows.length)})</td><td class="gt">${usd2(sum.total)}</td>${FIN_AGES.map(([k]) => `<td class="${sum[k] < 0 ? "neg" : ""}">${usd2(sum[k])}</td>`).join("")}</tr></tfoot>`;
 }
 async function saveFinNote(party, fields) {
   fin.editing = null; fin.editingAcc = null;   // first, so the input's blur doesn't save a second time
@@ -2494,9 +2494,9 @@ $("finKpis").onclick = (e) => {
 };
 $("finXlsx").onclick = () => {
   const S = FIN_SIDES[fin.side], rows = finRows();
-  const pivot = rows.map((r) => ({ [S.party]: r.party, ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, +r[k].toFixed(2)])), "Grand Total": +r.total.toFixed(2) }));
+  const pivot = rows.map((r) => ({ [S.party]: r.party, "Grand Total": +r.total.toFixed(2), ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, +r[k].toFixed(2)])) }));
   const sum = (k) => +rows.reduce((t, r) => t + r[k], 0).toFixed(2);
-  pivot.push({ [S.party]: "Grand Total", ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, sum(k)])), "Grand Total": sum("total") });
+  pivot.push({ [S.party]: "Grand Total", "Grand Total": sum("total"), ...Object.fromEntries(FIN_AGES.map(([k, l]) => [l, sum(k)])) });
   const parties = new Set(rows.map((r) => r.party));
   const docs = finDocs().filter((d) => parties.has(d.party)).map(finDocRow);
   writeXlsx(`SAR_${S.title.replace(/ /g, "_")}_${todayIso()}.xlsx`, [[S.table, pivot, [44, 16, 18, 18, 18, 16]], ["Invoices", docs, [40, 22, 20, 12, 12, 8, 12, 14, 14, 14, 18, 22, 10], 3]]);

@@ -44,6 +44,8 @@
   .side nav a:hover { background: rgb(255 255 255 / .08); color: #fff; transform: translateX(2px); }
   .side nav a[aria-current="page"] { background: rgb(255 255 255 / .14); color: #fff; }
   .side nav a[aria-current="page"] svg { opacity: 1; }
+  .side nav a.sub { padding: 6px 10px 6px 35px; font-size: 12px; font-weight: 500; color: #9AB0D4; }
+  .side nav a.sub[aria-current="true"] { background: rgb(255 255 255 / .08); color: #fff; font-weight: 600; }
   .side nav a[aria-current="page"]::before { content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: #fff; }
   .side .bottom { margin-top: auto; padding: 14px 18px 18px; border-top: 1px solid rgb(255 255 255 / .12); font-size: 11.5px; color: #8CA0C4; }
   .me { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
@@ -501,6 +503,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       Performance
     </a>
+    <a href="/" class="sub" data-page="sales" data-detail="billing">Billing Details</a>
+    <a href="/" class="sub" data-page="sales" data-detail="agent">Agent Detail</a>
+    <a href="/" class="sub" data-page="sales" data-detail="lane">Trade Lane Detail</a>
     <a href="/" data-page="mr">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
       M&amp;R Operations
@@ -650,7 +655,7 @@
   <section class="card panel" id="tableView">
     <h2 id="detailTitle">Billing Details</h2><p class="sub" id="detailSub"></p>
     <div class="tools">
-      <div class="seg" id="detailTabs"><button data-t="billing">Billing Details</button><button data-t="agent">Agent Detail</button><button data-t="lane">Trade Lane Detail</button></div>
+      <div class="seg hidden" id="detailTabs"><button data-t="billing">Billing Details</button><button data-t="agent">Agent Detail</button><button data-t="lane">Trade Lane Detail</button></div>
       <input class="search" id="detailSearch" placeholder="Search…">
       <span class="foot" id="detailCount"></span>
     </div>
@@ -1115,9 +1120,10 @@ function route(next) {
   if (location.hash || location.pathname !== "/" || location.search) history.replaceState(null, "", "/");
   let page = PAGES[currentPage] ? currentPage : "sales";
   if ((page === "admin" || page === "usage") && !isAdmin()) page = "sales";
-  for (const a of document.querySelectorAll(".side nav a")) {
+  for (const a of document.querySelectorAll(".side nav a:not(.sub)")) {
     if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
+  markPerfSub(page);
   $("pageTitle").textContent = PAGES[page];
   $("pageTitle").classList.add("hidden");
   $("filters").classList.toggle("hidden", page !== "sales");
@@ -1148,8 +1154,19 @@ $("menuBtn").onclick = openMenu;
 $("backdrop").onclick = closeMenu;
 for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
   const a = e.target.closest("a[data-page]"); if (!a) return;
-  e.preventDefault(); route(a.dataset.page);
+  e.preventDefault();
+  if (a.dataset.detail) {   // Performance sub-item: open that table
+    Object.assign(state, { detail: a.dataset.detail, mode: "table", detailQ: "", detailAll: false }); $("detailSearch").value = "";
+  }
+  route(a.dataset.page);
+  if (a.dataset.detail && state.lines.length) render();
+  if (a.dataset.detail) $("tableView").scrollIntoView({ behavior: "smooth", block: "start" });
 };
+// Billing Details / Agent Detail / Trade Lane Detail sit under Performance in the sidebar (table view only).
+function markPerfSub(page = currentPage) {
+  for (const a of document.querySelectorAll(".side nav a.sub"))
+    if (page === "sales" && state.mode === "table" && a.dataset.detail === state.detail) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current");
+}
 
 function showUser(me) {
   state.me = me;
@@ -1268,6 +1285,7 @@ const g = () => granularity(state.view, state.from, state.to);
 
 function render() {
   renderFilters();
+  markPerfSub();
   renderChargeFilter();
   const lines = inPeriod(), k = kpis(lines), kAll = kpis(inPeriodAll());   // Total Revenue card always covers every charge
 

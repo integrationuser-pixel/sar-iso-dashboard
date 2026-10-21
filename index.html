@@ -217,7 +217,7 @@
 
   /* charge filter */
   .ms { position: relative; display: inline-block; }
-  .ms-panel { position: absolute; top: 38px; left: 0; z-index: 30; width: 320px; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 11px;
+  .ms-panel { position: absolute; top: 38px; right: 0; z-index: 30; width: 320px; max-width: calc(100vw - 32px); padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 11px;
               box-shadow: 0 12px 32px rgb(15 42 77 / .16); }
   .ms-panel .search { width: 100%; margin-bottom: 8px; }
   .ms-actions { display: flex; gap: 6px; margin-bottom: 8px; }
@@ -225,6 +225,9 @@
   .ms-list label { display: flex; align-items: center; gap: 8px; padding: 6px 5px; border-radius: 5px; font-size: 12px; cursor: pointer; }
   .ms-list label:hover { background: var(--paper); }
   .ms-list input { accent-color: var(--accent); }
+  .ms-list label span { flex: 1; }
+  .ms-list .only { visibility: hidden; border: 0; background: none; color: var(--accent); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0 4px; }
+  .ms-list label:hover .only, .ms-list .only:focus-visible { visibility: visible; }
   #chargeBtn.on { border-color: var(--accent); background: #EFF4FF; color: var(--accent-dark); }
 
   /* ---------- drill-down modal ---------- */
@@ -1011,7 +1014,7 @@ const state = {
   mode: store.get("sar.salesMode", "table") === "chart" ? "chart" : "table",
   currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
   detail: "billing", detailQ: "", detailAll: false, monthsOpen: new Set(),
-  charges: new Set(store.get("sar.billingCharges", null) || DEFAULT_CHARGES), drill: null, drillQ: "", drillLimit: 200,
+  charges: new Set(), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
 
@@ -1146,7 +1149,9 @@ async function loadData(withUser) {
     if (me && !me.ok) throw new Error(me.error);
     if (!sales.ok) throw new Error(sales.error);
     if (me) { showUser(me.data); route(); }
+    const wasAll = allChargesOn();   // the Charges filter starts on all charges and stays on all after a refresh
     state.lines = sales.data.lines; state.lastSync = sales.data.lastSync;
+    if (wasAll) state.charges = new Set(allCharges());
     $("dataError").classList.add("hidden");
     showSynced();
     render();
@@ -1519,7 +1524,6 @@ function billingLines() {
     && (!q || [l.charge, l.shipper, l.agent, l.pol, l.pod].some((v) => (v || "").toLowerCase().includes(q))));
 }
 const allCharges = () => [...new Set(state.lines.map((l) => l.charge))].sort();
-function saveCharges() { store.set("sar.billingCharges", [...state.charges]); }
 function renderChargeFilter() {
   const all = allCharges(), n = all.filter((c) => state.charges.has(c)).length;
   const sameAsDefault = n === DEFAULT_CHARGES.length && DEFAULT_CHARGES.every((c) => state.charges.has(c));
@@ -1529,7 +1533,7 @@ function renderChargeFilter() {
   const q = $("chargeSearch").value.toLowerCase();
   const ordered = [...all.filter((c) => state.charges.has(c)), ...all.filter((c) => !state.charges.has(c))];   // ticked first
   $("chargeList").innerHTML = ordered.filter((c) => !q || c.toLowerCase().includes(q)).map((c) =>
-    `<label><input type="checkbox" value="${esc(c)}"${state.charges.has(c) ? " checked" : ""}>${esc(c)}</label>`).join("")
+    `<label><input type="checkbox" value="${esc(c)}"${state.charges.has(c) ? " checked" : ""}><span>${esc(c)}</span><button class="only" type="button" data-only="${esc(c)}" title="Show only this charge">Only</button></label>`).join("")
     || '<div class="foot" style="padding:8px">No matching charges</div>';
 }
 $("chargeBtn").onclick = (e) => {
@@ -1540,14 +1544,16 @@ $("chargeBtn").onclick = (e) => {
 };
 $("chargePanel").onclick = (e) => {
   e.stopPropagation();
+  const only = e.target.closest("button[data-only]");
+  if (only) { e.preventDefault(); state.charges = new Set([only.dataset.only]); render(); renderChargeFilter(); return; }
   const act = e.target.closest("button[data-ms]")?.dataset.ms; if (!act) return;
   state.charges = new Set(act === "all" ? allCharges() : act === "default" ? DEFAULT_CHARGES : []);
-  saveCharges(); render(); renderChargeFilter();
+  render(); renderChargeFilter();
 };
 $("chargeList").onchange = (e) => {
   const c = e.target.value; if (!c) return;
   e.target.checked ? state.charges.add(c) : state.charges.delete(c);
-  saveCharges(); render(); renderChargeFilter();   // whole page follows the Charges filter
+  render(); renderChargeFilter();   // whole page follows the Charges filter
 };
 $("chargeSearch").oninput = renderChargeFilter;
 document.addEventListener("click", (e) => {

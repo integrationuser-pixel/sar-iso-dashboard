@@ -966,11 +966,10 @@ function granularity(view, from, to) {
   const days = (toDate(to) - toDate(from)) / 864e5;
   return days > 62 ? "month" : days > 14 ? "week" : "day";
 }
-const sundayOf = (s) => addDays(s, -toDate(s).getUTCDay());
-const bucketKey = (s, g) => (g === "day" ? s : g === "week" ? sundayOf(s) : s.slice(0, 7) + "-01");   // Sales weeks start Sunday (WEEKNUM)
+const bucketKey = (s, g) => (g === "day" ? s : g === "week" ? mondayOf(s) : s.slice(0, 7) + "-01");   // weeks are ISO weeks (Monday start)
 function bucketLabel(k, g) {
   const d = toDate(k);
-  if (g === "week") return `Week ${weekNum(k < state.from ? state.from : k)}`;
+  if (g === "week") return isoWeekName(k);
   return g === "month" ? `${MONTHS[d.getUTCMonth()]} ${yy(d.getUTCFullYear())}` : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
 }
 function bucketRange(from, to, g) {
@@ -1445,22 +1444,18 @@ $("detailTable").onclick = (e) => {
 };
 
 // ============================================================ billing details pivot
-// Rows: Charge → Shipper → Party → POL → POD. Columns: months (Monthly view) or the month's WEEKNUM weeks (Weekly view) + grand total.
+// Rows: Charge → Shipper → Party → POL → POD. Columns: months (Monthly view) or the month's ISO weeks (Weekly view) + grand total.
 const PIVOT_LEVELS = [["charge", "Charge Name"], ["shipper", "Shipper Name"], ["agent", "Party Name"], ["pol", "POL"], ["pod", "POD"]];
 const DETAIL_KEYS = ["shipper", "agent", "pol", "pod"];
 // Charge column is frozen on the left while the month columns scroll.
 const CHARGE_COL = "left:0;width:300px;min-width:300px;max-width:300px";
-function weekNum(s) {   // Google Sheets WEEKNUM (weeks start Sunday, week 1 contains 1 Jan)
-  const d = toDate(s), jan1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.floor((Math.round((d - jan1) / 864e5) + jan1.getUTCDay()) / 7) + 1;
-}
 const monthLabel = (m) => `${MONTHS[+m.slice(5, 7) - 1]}-${m.slice(2, 4)}`;
 let pivotRows = [], pivotCols = [];
 
 function buildPivot(lines) {
   const root = { children: new Map(), cells: {}, total: 0 }, weeks = new Map();
   for (const l of lines) {
-    const m = l.date.slice(0, 7), w = `${m}|${weekNum(l.date)}`;
+    const m = l.date.slice(0, 7), w = `${m}|${mondayOf(l.date)}`;   // ISO week, cut at the month end
     if (!weeks.has(m)) weeks.set(m, new Set());
     weeks.get(m).add(w);
     const node = root;
@@ -1488,7 +1483,7 @@ function renderPivot() {
 
   $("detailTitle").textContent = "Billing Details";
   const weekly = state.view === "weekly";
-  $("detailSub").textContent = `Sum of amount by charge${weekly ? " per week (weeks start Sunday, as in the weekly-call sheet)" : ""}. Click a charge name for its Shipper, Party, POL and POD breakdown; click any number for the invoices.`;
+  $("detailSub").textContent = `Sum of amount by charge${weekly ? " per ISO week (Monday to Sunday; weeks at the month edges show only that month's days)" : ""}. Click a charge name for its Shipper, Party, POL and POD breakdown; click any number for the invoices.`;
   $("detailSearch").placeholder = "Search charge, shipper, party, port…";
   $("detailCount").textContent = `${root.children.size} of ${allCharges().length} charges · ${lines.length.toLocaleString("en-IN")} lines`;
   $("detailMore").classList.add("hidden");
@@ -1498,9 +1493,9 @@ function renderPivot() {
   if (weekly) {   // every week of the selected month, with or without billing
     const m = state.from.slice(0, 7), seen = new Set();
     for (let d = state.from; d <= state.to; d = addDays(d, 1)) {
-      const w = weekNum(d); if (seen.has(w)) continue; seen.add(w);
-      const days = []; for (let x = d; x <= state.to && weekNum(x) === w; x = addDays(x, 1)) days.push(x);
-      pivotCols.push({ key: `${m}|${w}`, m, week: w, from: days[0], to: days.at(-1) });
+      const mon = mondayOf(d); if (seen.has(mon)) continue; seen.add(mon);
+      const end = addDays(mon, 6) < state.to ? addDays(mon, 6) : state.to;
+      pivotCols.push({ key: `${m}|${mon}`, m, week: isoWeekName(mon), from: d, to: end });
     }
   } else for (const { m } of months) pivotCols.push({ key: m, m, monthTotal: true });
   pivotCols.push({ key: "__total", grand: true });
@@ -1510,7 +1505,7 @@ function renderPivot() {
   // The frozen corner is one cell per header row (a frozen cell spanning two rows doesn't cover the second row reliably).
   const head1 = `<th class="dim last" style="${CHARGE_COL}">Charge Name</th>`
     + pivotCols.map((c) => (c.grand ? `<th class="gt">Grand Total</th>`
-      : c.week ? `<th>Week ${c.week}<span class="wk-date">${shortDate(c.from)}${c.to !== c.from ? ` – ${shortDate(c.to)}` : ""}</span></th>`
+      : c.week ? `<th>${c.week}<span class="wk-date">${shortDate(c.from)}${c.to !== c.from ? ` – ${shortDate(c.to)}` : ""}</span></th>`
       : `<th class="mtot">${monthLabel(c.m)} Total</th>`)).join("");
   const head2 = "";
 
@@ -1596,10 +1591,7 @@ function pivotColRange(col) {
   if (col.grand) return { from: state.from, to: state.to };
   const [y, mo] = col.m.split("-").map(Number);
   let from = `${col.m}-01`, to = lastOfMonth(y, mo - 1);
-  if (col.week) {   // days of this month that fall in this WEEKNUM
-    const days = []; for (let d = from; d <= to; d = addDays(d, 1)) if (weekNum(d) === col.week) days.push(d);
-    from = days[0]; to = days[days.length - 1];
-  }
+  if (col.week) ({ from, to } = col);   // the ISO week's days within this month
   return { from: from < state.from ? state.from : from, to: to > state.to ? state.to : to };
 }
 function pivotClick(e) {
@@ -1608,7 +1600,7 @@ function pivotClick(e) {
   if (t.dataset.r) {
     const n = pivotRows[+t.dataset.r], col = pivotCols[+t.dataset.c];
     const name = n.label || (n.filter ? PIVOT_LEVELS.filter(([k]) => k in n.filter).map(([k]) => n.filter[k] || "(blank)").join(" › ") : "All charges");
-    const when = col.grand ? "" : ` — ${col.week ? `Week ${col.week}, ` : ""}${monthLabel(col.m)}`;
+    const when = col.grand ? "" : ` — ${col.week ? `${col.week}, ` : ""}${monthLabel(col.m)}`;
     openDrill({ title: name + when, ...(n.filter || {}), ...pivotColRange(col) });
     return false;
   }
@@ -2186,7 +2178,7 @@ function depCols() {
   for (let d = mondayOf(`${dep.from}-01`); d <= end && cols.length < 600; d = addDays(d, 7)) cols.push({ key: `wk:${d}`, monday: d, week: isoWeek(d) });
   return cols;
 }
-const isoWeekName = (monday) => `${addDays(monday, 3).slice(0, 4)}-W${String(isoWeek(monday)).padStart(2, "0")}`;   // ISO 8601, e.g. 2026-W07
+function isoWeekName(s) { const mon = mondayOf(s); return `${addDays(mon, 3).slice(0, 4)}-W${String(isoWeek(mon)).padStart(2, "0")}`; }   // ISO 8601, e.g. 2026-W07
 const depWeekLabel = (c) => isoWeekName(c.monday);
 const depWeekRange = (c) => `${shortDate(c.monday)} – ${shortDate(addDays(c.monday, 6))}`;
 const depKeys = () => (dep.group === "agent" ? ["plrAgent", "shipper"] : ["shipper", "plrAgent"]);

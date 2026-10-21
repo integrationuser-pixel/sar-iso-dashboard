@@ -63,6 +63,9 @@
   .page-head.hidden { display: none; }
   .page-head h2 { margin: 0; font-size: 17px; font-weight: 700; }
   .page-head .sub { margin: 2px 0 0; font-size: 12px; color: var(--ink-soft); }
+  .page-head .ph-text { flex: 1; min-width: 0; }
+  .page-head .ph-text .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .page-head .ph-controls { flex: none; display: flex; align-items: center; gap: 10px; }
   .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .select, .f select, .f input { height: 38px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper);
             font-size: 13px; font-weight: 600; color: #000; }
@@ -533,6 +536,16 @@
     <div class="ph-text"><h2>Current Tank Inventory Status</h2><p class="sub" id="invSub">Loading…</p></div>
     <label class="f">Country <select id="invCountry"><option value="">All countries</option></select></label>
   </div>
+  <div class="page-head hidden" id="depHead">
+    <div class="ph-text"><h2>Tank Deployment</h2><p class="sub" id="depSub">Loading…</p></div>
+    <div class="ph-controls">
+      <label class="f">From <select id="depFrom"></select></label>
+      <label class="f">To <select id="depTo"></select></label>
+      <div class="view-toggle" id="depGroup" role="group" aria-label="Group by">
+        <button data-g="shipper">By Shipper</button><button data-g="agent">By PLR Agent</button>
+      </div>
+    </div>
+  </div>
   <div class="right">
     <button class="btn-primary" id="refreshBtn" title="Reload data">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>
@@ -628,7 +641,7 @@
       <div class="tools" style="justify-content:space-between">
         <div><h2>Principal → Activity</h2><p class="sub" style="margin-bottom:0">Tanks by principal and current activity — click a number for the tanks</p></div>
         <div class="tools" style="margin:0">
-          <button class="btn" id="mrExpand">Expand all</button><button class="btn" id="mrCollapse">Collapse all</button>
+          <button class="btn" id="mrToggleAll">Expand all</button>
           <button class="btn" id="mrPivotXlsx">Export to Excel</button>
         </div>
       </div>
@@ -658,7 +671,7 @@
       <div><h2>Depot Inventory</h2><p class="sub" style="margin-bottom:0">Tanks at a depot by status — click a number for the tanks</p></div>
       <div class="tools" style="margin:0">
         <input class="search" id="invSearch" placeholder="Search country, depot, port, agent…">
-        <button class="btn" id="invExpand">Expand all</button><button class="btn" id="invCollapse">Collapse all</button>
+        <button class="btn" id="invToggleAll">Expand all</button>
         <button class="btn" id="invXlsx">Export to Excel</button>
       </div>
     </div>
@@ -671,16 +684,6 @@
 
 <main id="depPage" class="hidden">
   <div class="alert hidden" id="depErr" role="alert"></div>
-  <div class="card viewbar">
-    <div><h2>Tank Deployment</h2><p class="sub" id="depSub">Loading…</p></div>
-    <div class="mr-controls">
-      <label class="f">From <select id="depFrom"></select></label>
-      <label class="f">To <select id="depTo"></select></label>
-      <div class="view-toggle" id="depGroup" role="group" aria-label="Group by">
-        <button data-g="shipper">By Shipper</button><button data-g="agent">By PLR Agent</button>
-      </div>
-    </div>
-  </div>
   <div class="kpis dep-kpis" id="depKpis"></div>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
@@ -688,7 +691,7 @@
       <div class="tools" style="margin:0">
         <input class="search" id="depSearch" placeholder="Search shipper or agent…">
         <button class="btn" id="depWeeks">Show weeks</button><button class="btn" id="depMonths">Months only</button>
-        <button class="btn" id="depExpand">Expand all</button><button class="btn" id="depCollapse">Collapse all</button>
+        <button class="btn" id="depToggleAll">Expand all</button>
         <button class="btn" id="depXlsx">Export to Excel</button>
       </div>
     </div>
@@ -1081,6 +1084,7 @@ function route(next) {
   $("mrPage").classList.toggle("hidden", page !== "mr");
   $("invPage").classList.toggle("hidden", page !== "inv");
   $("invHead").classList.toggle("hidden", page !== "inv");
+  $("depHead").classList.toggle("hidden", page !== "dep");
   $("depPage").classList.toggle("hidden", page !== "dep");
   $("finPage").classList.toggle("hidden", page !== "fin");
   $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv", "dep", "fin"].includes(page));
@@ -1803,6 +1807,7 @@ function renderMrPivot(tanks) {
   $("mrPivot").innerHTML = `<thead><tr><th>Principal / Activity</th><th>Tanks</th><th>% of Total</th></tr></thead><tbody>${body
     || '<tr><td colspan="3" style="text-align:center;padding:30px;color:#94a3b8">No tanks</td></tr>'}</tbody>
     <tfoot><tr><td>GRAND TOTAL</td><td>${num(total, 'data-all="1"')}</td><td>${total ? "100.0%" : "–"}</td></tr></tfoot>`;
+  $("mrToggleAll").textContent = rows.length && rows.every((r) => mr.open.has(r.name)) ? "Collapse all" : "Expand all";
 }
 $("mrPivot").onclick = (e) => {
   const tg = e.target.closest("[data-tg]");
@@ -1811,8 +1816,12 @@ $("mrPivot").onclick = (e) => {
   if (b.dataset.all) return openTanks({ title: "All tanks" });
   openTanks({ title: [b.dataset.p, b.dataset.a].filter(Boolean).join(" › "), principal: b.dataset.p, activity: b.dataset.a });
 };
-$("mrExpand").onclick = () => { for (const r of mrPivotRows(mrTanks())) mr.open.add(r.name); renderMrPivot(mrTanks()); };
-$("mrCollapse").onclick = () => { mr.open.clear(); renderMrPivot(mrTanks()); };
+// one button: expands everything, or collapses everything once all is open
+$("mrToggleAll").onclick = () => {
+  const rows = mrPivotRows(mrTanks());
+  if (rows.length && rows.every((r) => mr.open.has(r.name))) mr.open.clear(); else for (const r of rows) mr.open.add(r.name);
+  renderMrPivot(mrTanks());
+};
 $("mrPivotXlsx").onclick = () => {
   const tanks = mrTanks(), total = tanks.length, rows = [];
   for (const p of mrPivotRows(tanks)) {
@@ -2055,11 +2064,15 @@ function renderInv() {
   for (const th of hr[1].cells) th.style.top = `${h}px`;
   const left = `${hr[1].cells[0].getBoundingClientRect().width}px`;
   for (const c of tbl.querySelectorAll(".dep")) c.style.left = left;
+  $("invToggleAll").textContent = groups.every((g) => !inv.closed.has(g.country)) ? "Collapse all" : "Expand all";
 }
 $("invCountry").onchange = (e) => { inv.country = e.target.value; renderInv(); };
 $("invSearch").oninput = (e) => { inv.q = e.target.value; renderInv(); };
-$("invExpand").onclick = () => { inv.closed.clear(); renderInv(); };
-$("invCollapse").onclick = () => { for (const g of invGroups()) inv.closed.add(g.country); renderInv(); };
+$("invToggleAll").onclick = () => {
+  const groups = invGroups();
+  if (groups.every((g) => !inv.closed.has(g.country))) for (const g of groups) inv.closed.add(g.country); else inv.closed.clear();
+  renderInv();
+};
 $("invKpis").onclick = (e) => {
   const b = e.target.closest(".kpi"); if (!b) return;
   const c = b.dataset.col;
@@ -2165,6 +2178,7 @@ function renderDep() {
   const tanks = bls.reduce((a, b) => a + b.tanks.length, 0);
   const synced = dep.data.lastSync ? new Date(dep.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
   $("depSub").textContent = `Export BLs of SAR Global PTE Ltd by HBL date · BLs up to ${dep.data.dataTo ? shortDate(dep.data.dataTo) : "—"} · synced ${synced}`;
+  $("depSub").title = $("depSub").textContent;
   $("depTitle").textContent = `Tanks Deployed by ${depLabel[k0]}`;
   $("depSearch").placeholder = `Search ${depLabel[k0].toLowerCase()} or ${depLabel[k1].toLowerCase()}…`;
 
@@ -2203,9 +2217,13 @@ function renderDep() {
     <tfoot><tr><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td>${cols.map((c) => `<td class="${c.monthTotal ? "mtot" : ""}">${n0(grand.months[c.key] || 0)}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
   const hr = $("depTable").tHead.rows;
   if (hr[1]) { const h = hr[0].getBoundingClientRect().height; for (const th of hr[1].cells) th.style.top = `${h}px`; }
+  $("depToggleAll").textContent = rows.length && rows.every((r) => dep.open.has(r.name)) ? "Collapse all" : "Expand all";
 }
-$("depExpand").onclick = () => { for (const r of depRows()) dep.open.add(r.name); renderDep(); };
-$("depCollapse").onclick = () => { dep.open.clear(); renderDep(); };
+$("depToggleAll").onclick = () => {
+  const rows = depRows();
+  if (rows.length && rows.every((r) => dep.open.has(r.name))) dep.open.clear(); else for (const r of rows) dep.open.add(r.name);
+  renderDep();
+};
 $("depWeeks").onclick = () => { for (const m of monthsBetween(dep.from, dep.to)) dep.monthsOpen.add(m); renderDep(); };
 $("depMonths").onclick = () => { dep.monthsOpen.clear(); renderDep(); };
 $("depTable").onclick = (e) => {

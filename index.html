@@ -134,7 +134,7 @@
   .login-footer b { color: var(--ink); }
 
   /* ---------- KPI cards ---------- */
-  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
   .kpi { text-align: left; padding: 16px 18px; border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 12px; background: var(--card);
          animation: cardRise .4s ease both; transition: transform .18s, box-shadow .18s, border-color .18s; }
   .kpi:nth-child(2) { animation-delay: .06s; } .kpi:nth-child(3) { animation-delay: .12s; } .kpi:nth-child(4) { animation-delay: .18s; } .kpi:nth-child(5) { animation-delay: .24s; }
@@ -904,8 +904,15 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-const CATEGORIES = ["Lease", "Detention", "EXIM", "M&R", "Other"];
 const CAT_COLORS = { Lease: "#2563eb", Detention: "#d97706", EXIM: "#059669", "M&R": "#7c3aed", Other: "#64748b" };
+// Charges outside Lease / Detention / EXIM / M&R are shown under their own name (KPI card, mix, trend), not lumped into "Other".
+const MAIN_CATS = ["Lease", "Detention", "EXIM", "M&R"];
+const EXTRA_COLORS = ["#0891b2", "#db2777", "#65a30d", "#ea580c", "#4f46e5", "#0d9488", "#b45309", "#9333ea", "#dc2626", "#475569"];
+const catOf = (l) => (l.category === "Other" ? l.charge || "Other" : l.category);
+const catColor = (c) => CAT_COLORS[c] || EXTRA_COLORS[Math.max(0, allCharges().indexOf(c)) % EXTRA_COLORS.length];
+const titleCase = (s) => String(s).toLowerCase().replace(/\b[a-z]/g, (x) => x.toUpperCase());
+const catLabel = (c) => (MAIN_CATS.includes(c) ? c : titleCase(c));
+const catsIn = (lines) => [...MAIN_CATS, ...[...new Set(lines.map(catOf))].filter((c) => !MAIN_CATS.includes(c)).sort()];
 
 // ============================================================ dates (UTC "YYYY-MM-DD")
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -971,8 +978,8 @@ function moneyShort(usd) {
 
 // ============================================================ calculations
 function kpis(lines) {
-  const byCat = Object.fromEntries(CATEGORIES.map((c) => [c, 0])); let total = 0, credit = 0;
-  for (const l of lines) { total += l.amount; byCat[l.category] += l.amount; if (l.docType === "Credit Note") credit += l.amount; }
+  const byCat = Object.fromEntries(catsIn(lines).map((c) => [c, 0])); let total = 0, credit = 0;
+  for (const l of lines) { total += l.amount; byCat[catOf(l)] += l.amount; if (l.docType === "Credit Note") credit += l.amount; }
   return { total, byCat, credit, gross: total - credit };
 }
 function topBy(lines, key, n = 10) {
@@ -991,7 +998,7 @@ function trendTable(lines, key, buckets, g) {
   }
   return { rows: [...m.values()].sort((a, b) => b.total - a.total), totals };
 }
-const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || l.category === f.category)
+const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || catOf(l) === f.category)
   && (f.agent === undefined || l.agent === f.agent) && (!f.lane || l.lane === f.lane)
   && (f.charge === undefined || l.charge === f.charge) && (f.shipper === undefined || l.shipper === f.shipper)
   && (f.pol === undefined || l.pol === f.pol) && (f.pod === undefined || l.pod === f.pod)
@@ -1014,7 +1021,7 @@ const state = {
   mode: store.get("sar.salesMode", "table") === "chart" ? "chart" : "table",
   currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
   detail: "billing", detailQ: "", detailAll: false, monthsOpen: new Set(),
-  charges: new Set(), drill: null, drillQ: "", drillLimit: 200,
+  charges: new Set(DEFAULT_CHARGES), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
 
@@ -1149,9 +1156,9 @@ async function loadData(withUser) {
     if (me && !me.ok) throw new Error(me.error);
     if (!sales.ok) throw new Error(sales.error);
     if (me) { showUser(me.data); route(); }
-    const wasAll = allChargesOn();   // the Charges filter starts on all charges and stays on all after a refresh
+    const first = !state.lines.length;   // the Charges filter starts on the 5 default charges; a refresh keeps the selection
     state.lines = sales.data.lines; state.lastSync = sales.data.lastSync;
-    if (wasAll) state.charges = new Set(allCharges());
+    if (first) state.charges = new Set(DEFAULT_CHARGES);
     $("dataError").classList.add("hidden");
     showSynced();
     render();
@@ -1231,11 +1238,12 @@ function render() {
   renderChargeFilter();
   const lines = inPeriod(), k = kpis(lines);
 
-  const cards = [["Total Revenue", null], ["Lease Revenue", "Lease"], ["Detention Revenue", "Detention"], ["EXIM Revenue", "EXIM"], ["M&R Revenue", "M&R"]];
+  const cards = [["Total Revenue", null], ...MAIN_CATS.map((c) => [`${c} Revenue`, c]),
+                 ...Object.keys(k.byCat).filter((c) => !MAIN_CATS.includes(c)).map((c) => [catLabel(c), c])];
   $("kpis").innerHTML = cards.map(([label, cat]) => {
     const v = cat ? k.byCat[cat] : k.total;
-    return `<button class="kpi" data-cat="${cat || ""}" title="${esc(money(v))}" style="border-top-color:${cat ? CAT_COLORS[cat] : "#1E3A8A"}">
-      <div class="lbl">${label}</div>
+    return `<button class="kpi" data-cat="${esc(cat || "")}" title="${esc(money(v))}" style="border-top-color:${cat ? catColor(cat) : "#1E3A8A"}">
+      <div class="lbl">${esc(label)}</div>
       <div class="val">${moneyCr(v)}</div>
       ${cat ? "" : `<div class="note muted">${allChargesOn() ? "" : `${allCharges().filter((c) => state.charges.has(c)).length} of ${allCharges().length} charges · `}Gross ${moneyCr(k.gross)} · CN ${moneyCr(k.credit)}</div>`}</button>`;
   }).join("");
@@ -1265,7 +1273,7 @@ $("viewToggle").onclick = (e) => {
   const m = e.target.closest("button")?.dataset.mode;
   if (m && m !== state.mode) { state.mode = m; store.set("sar.salesMode", m); render(); }
 };
-$("kpis").onclick = (e) => { const b = e.target.closest(".kpi"); if (b) { const c = b.dataset.cat || undefined; openDrill({ title: c ? `${c} Revenue` : "Total Revenue", category: c }); } };
+$("kpis").onclick = (e) => { const b = e.target.closest(".kpi"); if (b) { const c = b.dataset.cat || undefined; openDrill({ title: c ? (MAIN_CATS.includes(c) ? `${c} Revenue` : catLabel(c)) : "Total Revenue", category: c }); } };
 
 Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
 Chart.defaults.color = "#64748b";
@@ -1321,41 +1329,42 @@ function renderBar(id, data, onClick, maxLabel = 30) {
 }
 
 function renderMix(byCat) {
-  const data = CATEGORIES.map((c) => ({ name: c, value: byCat[c] })).filter((d) => d.value > 0);
+  const data = Object.keys(byCat).map((c) => ({ name: c, value: byCat[c] })).filter((d) => d.value > 0);
   const total = data.reduce((s, d) => s + d.value, 0);
   charts.mix?.destroy();
   charts.mix = new Chart($("mixChart"), {
     type: "doughnut",
-    data: { labels: data.map((d) => d.name), datasets: [{ data: data.map((d) => conv(d.value)), backgroundColor: data.map((d) => CAT_COLORS[d.name]), borderWidth: 1 }] },
+    data: { labels: data.map((d) => d.name), datasets: [{ data: data.map((d) => conv(d.value)), backgroundColor: data.map((d) => catColor(d.name)), borderWidth: 1 }] },
     options: {
       maintainAspectRatio: false, cutout: "58%", animation: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${data[c.dataIndex].name}: ${money(data[c.dataIndex].value)} (${(data[c.dataIndex].value / total * 100).toFixed(1)}%)` } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${catLabel(data[c.dataIndex].name)}: ${money(data[c.dataIndex].value)} (${(data[c.dataIndex].value / total * 100).toFixed(1)}%)` } },
                  valueLabels: { format: (_, i) => `${moneyShort(data[i].value)}\n${(data[i].value / total * 100).toFixed(0)}%` } },
-      onClick: (_, els) => { if (els[0]) { const c = data[els[0].index].name; openDrill({ title: `${c} Revenue`, category: c }); } },
+      onClick: (_, els) => { if (els[0]) { const c = data[els[0].index].name; openDrill({ title: MAIN_CATS.includes(c) ? `${c} Revenue` : catLabel(c), category: c }); } },
       onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
     },
   });
   $("mixLegend").innerHTML = data.length ? data.map((d) =>
-    `<button data-cat="${esc(d.name)}"><span class="dot" style="background:${CAT_COLORS[d.name]}"></span>${esc(d.name)} · ${moneyShort(d.value)} (${(d.value / total * 100).toFixed(0)}%)</button>`).join("")
+    `<button data-cat="${esc(d.name)}"><span class="dot" style="background:${catColor(d.name)}"></span>${esc(catLabel(d.name))} · ${moneyShort(d.value)} (${(d.value / total * 100).toFixed(0)}%)</button>`).join("")
     : '<span class="foot">No revenue in this period</span>';
 }
-$("mixLegend").onclick = (e) => { const c = e.target.closest("button")?.dataset.cat; if (c) openDrill({ title: `${c} Revenue`, category: c }); };
+$("mixLegend").onclick = (e) => { const c = e.target.closest("button")?.dataset.cat; if (c) openDrill({ title: MAIN_CATS.includes(c) ? `${c} Revenue` : catLabel(c), category: c }); };
 
 function renderTrend(lines) {
   const gr = g(), buckets = bucketRange(state.from, state.to, gr);
-  const rows = new Map(buckets.map((b) => [b, Object.fromEntries([["total", 0], ...CATEGORIES.map((c) => [c, 0])])]));
-  for (const l of lines) { const r = rows.get(bucketKey(l.date, gr)); if (r) { r.total += l.amount; r[l.category] += l.amount; } }
+  const cats = catsIn(lines);
+  const rows = new Map(buckets.map((b) => [b, Object.fromEntries([["total", 0], ...cats.map((c) => [c, 0])])]));
+  for (const l of lines) { const r = rows.get(bucketKey(l.date, gr)); if (r) { r.total += l.amount; r[catOf(l)] += l.amount; } }
   $("trendSub").textContent = `Net revenue per ${gr} — click a point for detail`;
   const ds = (label, key, color, width) => ({ label, data: buckets.map((b) => conv(rows.get(b)[key])), borderColor: color, backgroundColor: color, borderWidth: width, pointRadius: key === "total" ? 3 : 0, tension: 0.25 });
   charts.trend?.destroy();
   charts.trend = new Chart($("trendChart"), {
     type: "line",
-    data: { labels: buckets.map((b) => bucketLabel(b, gr)), datasets: [ds("Total", "total", "#0f172a", 2.5), ...CATEGORIES.map((c) => ds(c, c, CAT_COLORS[c], 1.5))] },
+    data: { labels: buckets.map((b) => bucketLabel(b, gr)), datasets: [ds("Total", "total", "#0f172a", 2.5), ...cats.map((c) => ds(catLabel(c), c, catColor(c), 1.5))] },
     options: {
       maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, layout: { padding: { top: 18, right: 12 } },
       plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10 } },
                  valueLabels: buckets.length <= 18 ? { datasets: [0], format: (_, i) => moneyShort(rows.get(buckets[i]).total) } : undefined,
-                 tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${money(rows.get(buckets[c.dataIndex])[c.datasetIndex === 0 ? "total" : CATEGORIES[c.datasetIndex - 1]])}` } } },
+                 tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${money(rows.get(buckets[c.dataIndex])[c.datasetIndex === 0 ? "total" : cats[c.datasetIndex - 1]])}` } } },
       scales: { y: { ticks: { callback: (v) => moneyShort(state.currency === "INR" ? v / state.rate : v) }, grid: { color: "#e2e8f0" } }, x: { grid: { display: false } } },
       onClick: (_, els) => { if (els[0]) { const b = buckets[els[0].index]; openDrill({ title: `Revenue — ${bucketLabel(b, gr)}`, ...bucketSpan(b) }); } },
     },
@@ -1666,7 +1675,7 @@ function renderDrill() {
   $("mTable").innerHTML = `<thead><tr><th>Date</th><th>Invoice No</th><th>Type</th><th>Agent</th><th>Trade Lane</th><th>Charge</th><th>Category</th><th>BL No</th><th class="amt">Amount</th></tr></thead><tbody>`
     + (rows.slice(0, state.drillLimit).map((l) => `<tr><td>${shortDate(l.date)}</td><td class="mono">${esc(l.invoiceNo)}</td><td>${pill(l.docType)}</td>
         <td class="name" title="${esc(l.agent)}">${esc(l.agent)}</td><td>${l.lane ? esc(l.lane) : '<span class="dash">—</span>'}</td>
-        <td class="name" title="${esc(l.charge)}">${esc(l.charge)}</td><td><span class="dot" style="background:${CAT_COLORS[l.category]}"></span> ${esc(l.category)}</td>
+        <td class="name" title="${esc(l.charge)}">${esc(l.charge)}</td><td><span class="dot" style="background:${catColor(catOf(l))}"></span> ${esc(catLabel(catOf(l)))}</td>
         <td class="mono">${l.blNo ? esc(l.blNo) : '<span class="dash">—</span>'}</td><td class="amt${l.amount < 0 ? " neg" : ""}">${money(l.amount)}</td></tr>`).join("")
       || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">No matching lines</td></tr>') + "</tbody>";
   $("mMore").classList.toggle("hidden", rows.length <= state.drillLimit);
@@ -1685,7 +1694,7 @@ document.addEventListener("keydown", (e) => {
 $("mCsv").onclick = () => {
   const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
   const head = ["Invoice Date", "Invoice No", "Type", "Agent", "Trade Lane", "Charge", "Category", "BL No", "Job No", "Amount USD"];
-  const body = drillRows().map((l) => [l.date, l.invoiceNo, l.docType, l.agent, l.lane || "", l.charge, l.category, l.blNo, l.jobNo, l.amount.toFixed(2)].map(q).join(","));
+  const body = drillRows().map((l) => [l.date, l.invoiceNo, l.docType, l.agent, l.lane || "", l.charge, catLabel(catOf(l)), l.blNo, l.jobNo, l.amount.toFixed(2)].map(q).join(","));
   const url = URL.createObjectURL(new Blob([[head.join(","), ...body].join("\n")], { type: "text/csv" }));
   Object.assign(document.createElement("a"), { href: url, download: state.drill.title.replace(/[^\w]+/g, "_") + ".csv" }).click();
   URL.revokeObjectURL(url);

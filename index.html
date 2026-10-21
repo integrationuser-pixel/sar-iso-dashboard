@@ -45,6 +45,8 @@
   .side nav a[aria-current="page"] { background: rgb(255 255 255 / .14); color: #fff; }
   .side nav a[aria-current="page"] svg { opacity: 1; }
   .perf-blank { padding: 80px 16px; text-align: center; font-size: 14px; color: var(--ink-soft); }
+  .side nav .chev { margin-left: auto; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); opacity: .6; transition: transform .15s; }
+  .side nav a[aria-expanded="true"] .chev { transform: rotate(45deg); }
   .side nav a.sub { padding: 6px 10px 6px 35px; font-size: 12px; font-weight: 500; color: #9AB0D4; }
   .side nav a.sub[aria-current="true"] { background: rgb(255 255 255 / .08); color: #fff; font-weight: 600; }
   .side nav a[aria-current="page"]::before { content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: #fff; }
@@ -502,11 +504,13 @@
   <nav id="sideNav">
     <a href="/" data-page="sales">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-      Performance
+      Performance<span class="chev" aria-hidden="true"></span>
     </a>
-    <a href="/" class="sub" data-page="sales" data-detail="billing">Billing Details</a>
-    <a href="/" class="sub" data-page="sales" data-detail="agent">Agent Detail</a>
-    <a href="/" class="sub" data-page="sales" data-detail="lane">Trade Lane Detail</a>
+    <div class="subnav hidden" id="perfSub">
+      <a href="/" class="sub" data-page="sales" data-detail="billing">Billing Details</a>
+      <a href="/" class="sub" data-page="sales" data-detail="agent">Agent Detail</a>
+      <a href="/" class="sub" data-page="sales" data-detail="lane">Trade Lane Detail</a>
+    </div>
     <a href="/" data-page="mr">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
       M&amp;R Operations
@@ -1167,6 +1171,9 @@ for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
 };
 // Billing Details / Agent Detail / Trade Lane Detail sit under Performance in the sidebar (table view only).
 function markPerfSub(page = currentPage) {
+  // the breakdown opens under Performance while that page is shown
+  $("perfSub").classList.toggle("hidden", page !== "sales");
+  document.querySelector('.side nav a[data-page="sales"]:not(.sub)').setAttribute("aria-expanded", page === "sales");
   for (const a of document.querySelectorAll(".side nav a.sub"))
     if (page === "sales" && state.mode === "table" && a.dataset.detail === state.detail) a.setAttribute("aria-current", "true"); else a.removeAttribute("aria-current");
 }

@@ -274,7 +274,7 @@
   /* one line per cell: long names are cut with "…" and shown in full on hover */
   .inv-table th, .inv-table td { white-space: nowrap; }
   .inv-table td.txt { max-width: 190px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
-  .inv-table td:not(.txt) { min-width: 40px; }
+  .inv-table td:not(.txt) { min-width: 38px; }
   .inv-table td.ctry { font-weight: 700; max-width: 150px; }
   .inv-table td:nth-child(3) { max-width: 100px; }
   .inv-table td:nth-child(4), .inv-table td:nth-child(5) { max-width: 135px; }
@@ -2041,9 +2041,9 @@ function renderInv() {
     body += `<tr class="ctot"><td class="txt ctry" title="${ck} Total">${open ? "" : `<button class="tg" data-tg="${ck}" aria-expanded="false">+</button>`}${ck} Total</td><td class="txt dep"></td><td></td><td></td><td></td>${nums(g.tot, `data-country="${ck}"`)}</tr>`;
   }
   $("invTable").innerHTML = `<thead>
-      <tr><th class="txt grp" colspan="5" style="text-align:left">Depot</th><th class="st">AL</th><th class="av" colspan="4">AV — days</th><th class="st">UC</th><th class="st">UR</th><th class="st">US</th><th class="gt wrap" rowspan="1"></th></tr>
+      <tr><th class="txt grp" colspan="5" style="text-align:left">Depot</th><th class="st"></th><th class="av" colspan="4">AV — days</th><th class="st" colspan="3"></th><th class="gt wrap" rowspan="1"></th></tr>
       <tr><th class="txt wrap">Depot Country</th><th class="txt dep wrap">Depot Name</th><th class="txt wrap">Depot Port</th><th class="txt wrap">Depot Agent</th><th class="txt wrap">Depot Billing Party</th>
-        ${INV_COLS.map(([k, l]) => `<th class="${k.startsWith("av") ? "av" : "st"}">${k.startsWith("av") ? l : "0"}</th>`).join("")}<th class="gt wrap">Grand Total</th></tr></thead>
+        ${INV_COLS.map(([k, l]) => `<th class="${k.startsWith("av") ? "av" : "st"}">${l}</th>`).join("")}<th class="gt wrap">Grand Total</th></tr></thead>
     <tbody>${body || '<tr><td colspan="14" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
     <tfoot><tr><td class="txt">Grand Total</td><td class="txt dep"></td><td></td><td></td><td></td>${INV_COLS.map(([k]) => `<td class="${ageCls(k)}">${n0(grand[k])}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
   // freeze the two header rows and the Depot Name column (left offset = width of the Country column)

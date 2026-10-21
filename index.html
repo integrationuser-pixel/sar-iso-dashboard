@@ -1914,7 +1914,7 @@ function renderDepot() {
   $("mrDepotSub").textContent = `${n0(grand.total)} tanks at ${n0(depots)} depots (to-location of the latest movement)`;
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : '<span class="dash">–</span>'}</td>`;
   // One row per depot with its totals; + opens it to show each agent / principal at that depot.
-  const nums = (r, base) => DEPOT_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`)).join("") + cell(r.total, base, "rt");
+  const nums = (r, base) => cell(r.total, base, "rt") + DEPOT_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`)).join("");   // Grand Total right after Principal
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   let body = "", i = 0;
   const searching = !!mr.depotQ;
@@ -1931,9 +1931,9 @@ function renderDepot() {
   }
   const allDepots = [...new Set(rows.map((r) => r.depot))];
   $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) ? "Collapse all" : "Expand all";
-  $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th>Principal</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}<th class="rt">Row Total</th></tr></thead>
+  $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th>Principal</th><th class="rt">Grand Total</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
     <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
-    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}<td>${n0(grand.total)}</td></tr></tfoot>`;
+    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td><td>${n0(grand.total)}</td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}</tr></tfoot>`;
 }
 $("mrDepotSearch").oninput = (e) => { mr.depotQ = e.target.value; renderDepot(); };   // matching depots open while searching
 $("mrDepotToggleAll").onclick = () => {
@@ -1951,8 +1951,8 @@ $("mrDepotTable").onclick = (e) => {
 };
 $("mrDepotXlsx").onclick = () => {
   const rows = depotRows(), out = [];
-  const conv = (r) => ({ "Depot Name": r.depot, "Depot Agent": r.agent, Principal: r.principal,
-    ...Object.fromEntries(DEPOT_COLS.map(([k, l]) => [l, r[k]])), "Row Total": r.total });
+  const conv = (r) => ({ "Depot Name": r.depot, "Depot Agent": r.agent, Principal: r.principal, "Grand Total": r.total,
+    ...Object.fromEntries(DEPOT_COLS.map(([k, l]) => [l, r[k]])) });
   let i = 0;
   while (i < rows.length) {
     const d = rows[i].depot, group = [];
@@ -1961,7 +1961,7 @@ $("mrDepotXlsx").onclick = () => {
     if (group.length > 1) out.push(conv({ ...sumRows(group, `${d} — TOTAL`) }));
   }
   out.push(conv(sumRows(rows, "GRAND TOTAL")));
-  writeXlsx(`SAR_Depot_Report_${todayIso()}.xlsx`, [["Depot Report", out, [30, 34, 30, 10, 14, 12, 12, 10, 10]]]);
+  writeXlsx(`SAR_Depot_Report_${todayIso()}.xlsx`, [["Depot Report", out, [30, 34, 30, 12, 10, 14, 12, 12, 10]]]);
 };
 
 // ---- tank list pop-up

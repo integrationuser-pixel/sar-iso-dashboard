@@ -310,6 +310,7 @@
   /* ---------- tank deployment ---------- */
   #depPage { align-content: start; }
   .kpis.dep-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .dep-table th .wk-date { display: block; font-weight: 500; font-size: 10px; opacity: .7; text-transform: none; letter-spacing: 0; }
   .dep-table th, .dep-table td { white-space: nowrap; padding: 8px 10px; }
   .dep-table th { font-size: 10.5px; text-align: right; }
   .dep-table th.txt, .dep-table td.txt { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
@@ -569,6 +570,9 @@
   <div class="page-head hidden" id="depHead">
     <div class="ph-text"><h2>Tank Deployment</h2><p class="sub" id="depSub">Loading…</p></div>
     <div class="ph-controls">
+      <div class="view-toggle" id="depPeriod" role="group" aria-label="Period">
+        <button data-p="month">Monthly</button><button data-p="week">Weekly</button>
+      </div>
       <label class="f">From <select id="depFrom"></select></label>
       <label class="f">To <select id="depTo"></select></label>
       <div class="view-toggle" id="depGroup" role="group" aria-label="Group by">
@@ -698,10 +702,9 @@
   <div class="kpis dep-kpis" id="depKpis"></div>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
-      <div><h2 id="depTitle">Tanks Deployed by Shipper</h2><p class="sub" style="margin-bottom:0">Number of tanks on export BLs by HBL month — + on a month shows its weeks; click a number for the BLs</p></div>
+      <div><h2 id="depTitle">Tanks Deployed by Shipper</h2><p class="sub" style="margin-bottom:0" id="depTableSub">Number of tanks on export BLs by HBL month; click a number for the BLs</p></div>
       <div class="tools" style="margin:0">
         <input class="search" id="depSearch" placeholder="Search shipper or agent…">
-        <button class="btn" id="depWeeksToggle">Show weeks</button>
         <button class="btn" id="depToggleAll">Expand all</button>
         <button class="btn" id="depXlsx">Export to Excel</button>
       </div>
@@ -2134,26 +2137,25 @@ $("invXlsx").onclick = () => {
 
 // ============================================================ Tank Deployment
 // Tanks on export BLs (SAR Global PTE Ltd) per HBL month, by shipper or PLR agent — same as the Syscon BL Register pivot.
-const dep = { data: null, from: "", to: "", group: store.get("sar.depGroup", "shipper"), q: "", open: new Set(), monthsOpen: new Set(), drill: null, drillQ: "" };
-// Columns: one per month (Month Total), and when a month is open one per week before it — like Billing Details,
-// but with ISO weeks (Monday start), which is what the Syscon BL Register "WeeK" column uses.
+const dep = { data: null, from: "", to: "", group: store.get("sar.depGroup", "shipper"), period: store.get("sar.depPeriod", "month") === "week" ? "week" : "month",
+              q: "", open: new Set(), drill: null, drillQ: "" };
+// Monthly view: one column per HBL month. Weekly view: one column per ISO week (Monday start), which is
+// what the Syscon BL Register "WeeK" column uses; a week is counted by its BLs that fall in the selected months.
 function isoWeek(s) {
   const d = toDate(s), t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   t.setUTCDate(t.getUTCDate() + 3 - ((t.getUTCDay() + 6) % 7));            // Thursday of this week
   const jan4 = new Date(Date.UTC(t.getUTCFullYear(), 0, 4));
   return 1 + Math.round(((t - jan4) / 864e5 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
 }
+const depWeekKey = (date) => `wk:${mondayOf(date)}`;
 function depCols() {
-  const weeks = new Map();
-  for (const b of depInRange()) { const m = b.date.slice(0, 7); if (!weeks.has(m)) weeks.set(m, new Set()); weeks.get(m).add(isoWeek(b.date)); }
-  const cols = [];
-  for (const m of monthsBetween(dep.from, dep.to)) {
-    const ws = [...(weeks.get(m) || [])].sort((a, b) => a - b);
-    if (dep.monthsOpen.has(m)) for (const w of ws) cols.push({ key: `${m}|${w}`, m, week: w });
-    cols.push({ key: m, m, monthTotal: true, weeks: ws });
-  }
+  if (dep.period !== "week") return monthsBetween(dep.from, dep.to).map((m) => ({ key: m, m }));
+  const cols = [], end = monthEnd(dep.to);
+  for (let d = mondayOf(`${dep.from}-01`); d <= end && cols.length < 600; d = addDays(d, 7)) cols.push({ key: `wk:${d}`, monday: d, week: isoWeek(d) });
   return cols;
 }
+const depWeekLabel = (c) => `Week ${c.week}`;
+const depWeekRange = (c) => `${shortDate(c.monday)} – ${shortDate(addDays(c.monday, 6))}`;
 const depKeys = () => (dep.group === "agent" ? ["plrAgent", "shipper"] : ["shipper", "plrAgent"]);
 const depLabel = { shipper: "Shipper", plrAgent: "PLR Agent" };
 const monthsBetween = (a, b) => { const out = []; let [y, m] = a.split("-").map(Number); const [y2, m2] = b.split("-").map(Number);
@@ -2189,7 +2191,7 @@ function depRows() {
   const [k0, k1] = depKeys(), q = dep.q.toLowerCase(), m = new Map();
   for (const b of depInRange()) {
     if (q && ![b.shipper, b.plrAgent].some((v) => v.toLowerCase().includes(q))) continue;
-    const a = b[k0], c = b[k1], mo = b.date.slice(0, 7), wk = `${mo}|${isoWeek(b.date)}`, n = b.tanks.length;
+    const a = b[k0], c = b[k1], mo = b.date.slice(0, 7), wk = depWeekKey(b.date), n = b.tanks.length;
     const add = (x) => { x.total += n; x.months[mo] = (x.months[mo] || 0) + n; x.months[wk] = (x.months[wk] || 0) + n; };
     let r = m.get(a); if (!r) m.set(a, r = { name: a, total: 0, bls: 0, months: {}, kids: new Map() });
     add(r); r.bls++;
@@ -2203,6 +2205,10 @@ function depRows() {
 function renderDep() {
   if (!dep.data) return;
   for (const b of $("depGroup").children) b.setAttribute("aria-pressed", b.dataset.g === dep.group);
+  for (const b of $("depPeriod").children) b.setAttribute("aria-pressed", b.dataset.p === dep.period);
+  $("depTableSub").textContent = dep.period === "week"
+    ? "Number of tanks on export BLs by HBL week (ISO weeks, Monday start); click a number for the BLs"
+    : "Number of tanks on export BLs by HBL month; click a number for the BLs";
   const [k0, k1] = depKeys(), bls = depInRange();
   const tanks = bls.reduce((a, b) => a + b.tanks.length, 0);
   const synced = dep.data.lastSync ? new Date(dep.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
@@ -2222,18 +2228,11 @@ function renderDep() {
   const rows = depRows(), grand = { total: 0, months: {} }, cols = depCols();
   for (const r of rows) { grand.total += r.total; for (const [m, v] of Object.entries(r.months)) grand.months[m] = (grand.months[m] || 0) + v; }
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : ""}</td>`;
-  const cells = (r, attrs) => cols.map((c) => cell(r.months[c.key], `${attrs} data-m="${c.key}"`, c.monthTotal ? "mtot" : "")).join("") + cell(r.total, attrs, "gt");
-  const anyOpen = cols.some((c) => c.week);
-  let head1 = `<th class="txt"${anyOpen ? ' rowspan="1"' : ""}>${depLabel[k0]}</th><th class="txt">${depLabel[k1]}</th>`, head2 = anyOpen ? `<th class="txt"></th><th class="txt"></th>` : "";
-  for (const c of cols) {
-    if (!c.monthTotal) continue;
-    const open = dep.monthsOpen.has(c.m) && c.weeks.length, nW = open ? c.weeks.length : 0;
-    const tg = c.weeks.length ? `<button class="tg" data-month="${c.m}" aria-label="${open ? "Hide" : "Show"} weeks of ${monthLabel(c.m)}">${open ? "−" : "+"}</button>` : "";
-    if (open) { head1 += `<th class="mhead" colspan="${nW + 1}">${tg}${monthLabel(c.m)}</th>`; head2 += c.weeks.map((w) => `<th>Week ${w}</th>`).join("") + `<th class="mtot">${monthLabel(c.m)} Total</th>`; }
-    else if (anyOpen) { head1 += `<th class="mtot">${tg}${monthLabel(c.m)}</th>`; head2 += `<th class="mtot">Total</th>`; }
-    else head1 += `<th class="mtot">${tg}${monthLabel(c.m)}</th>`;
-  }
-  head1 += `<th class="gt">Grand Total</th>`; if (anyOpen) head2 += `<th class="gt"></th>`;
+  const weekly = dep.period === "week";
+  const cells = (r, attrs) => cols.map((c) => cell(r.months[c.key], `${attrs} data-m="${c.key}"`, weekly ? "" : "mtot")).join("") + cell(r.total, attrs, "gt");
+  const head1 = `<th class="txt">${depLabel[k0]}</th><th class="txt">${depLabel[k1]}</th>`
+    + cols.map((c) => (weekly ? `<th title="${depWeekRange(c)}">${depWeekLabel(c)}<span class="wk-date">${shortDate(c.monday)}</span></th>` : `<th class="mtot">${monthLabel(c.m)}</th>`)).join("")
+    + `<th class="gt">Grand Total</th>`;
   let body = "";
   for (const r of rows) {
     const open = dep.open.has(r.name), a0 = `data-a="${esc(r.name)}"`;
@@ -2241,36 +2240,30 @@ function renderDep() {
       <td class="txt l1">${open ? "" : `<span class="dash">${r.kids.length} ${depLabel[k1].toLowerCase()}${r.kids.length === 1 ? "" : "s"}</span>`}</td>${cells(r, a0)}</tr>`;
     if (open) for (const k of r.kids) body += `<tr class="lv1"><td class="txt"></td><td class="txt l1" title="${esc(k.name)}">${esc(k.name)}</td>${cells(k, `${a0} data-b="${esc(k.name)}"`)}</tr>`;
   }
-  $("depTable").innerHTML = `<thead><tr>${head1}</tr>${anyOpen ? `<tr>${head2}</tr>` : ""}</thead>
+  $("depTable").innerHTML = `<thead><tr>${head1}</tr></thead>
     <tbody>${body || `<tr><td colspan="${3 + cols.length}" style="text-align:center;padding:30px;color:#94a3b8">No BLs in this period</td></tr>`}</tbody>
-    <tfoot><tr><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td>${cols.map((c) => `<td class="${c.monthTotal ? "mtot" : ""}">${n0(grand.months[c.key] || 0)}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
-  const hr = $("depTable").tHead.rows;
-  if (hr[1]) { const h = hr[0].getBoundingClientRect().height; for (const th of hr[1].cells) th.style.top = `${h}px`; }
+    <tfoot><tr><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td>${cols.map((c) => `<td class="${weekly ? "" : "mtot"}">${n0(grand.months[c.key] || 0)}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
   $("depToggleAll").textContent = rows.length && rows.every((r) => dep.open.has(r.name)) ? "Collapse all" : "Expand all";
-  { const ms = depWeekMonths(); $("depWeeksToggle").textContent = ms.length && ms.every((m) => dep.monthsOpen.has(m)) ? "Months only" : "Show weeks"; }
 }
 $("depToggleAll").onclick = () => {
   const rows = depRows();
   if (rows.length && rows.every((r) => dep.open.has(r.name))) dep.open.clear(); else for (const r of rows) dep.open.add(r.name);
   renderDep();
 };
-const depWeekMonths = () => depCols().filter((c) => c.monthTotal && c.weeks.length).map((c) => c.m);
-$("depWeeksToggle").onclick = () => {
-  const ms = depWeekMonths();
-  if (ms.length && ms.every((m) => dep.monthsOpen.has(m))) dep.monthsOpen.clear(); else for (const m of ms) dep.monthsOpen.add(m);
-  renderDep();
+$("depPeriod").onclick = (e) => {
+  const b = e.target.closest("button[data-p]"); if (!b || b.dataset.p === dep.period) return;
+  dep.period = b.dataset.p; store.set("sar.depPeriod", dep.period); renderDep();
 };
 $("depTable").onclick = (e) => {
-  const mt = e.target.closest("[data-month]");
-  if (mt) { const m = mt.dataset.month; dep.monthsOpen.has(m) ? dep.monthsOpen.delete(m) : dep.monthsOpen.add(m); return renderDep(); }
   const tg = e.target.closest("[data-tg]");
   if (tg) { const k = tg.dataset.tg; dep.open.has(k) ? dep.open.delete(k) : dep.open.add(k); return renderDep(); }
   const b = e.target.closest("button.num"); if (!b) return;
   const [k0, k1] = depKeys(), { a, b: bb, m } = b.dataset;
-  const [mo, wk] = (m || "").split("|");
-  const when = !m ? `${monthLabel(dep.from)} – ${monthLabel(dep.to)}` : wk ? `Week ${wk}, ${monthLabel(mo)}` : monthLabel(mo);
+  const wk = m?.startsWith("wk:") ? m.slice(3) : null, mo = m && !wk ? m : null;
+  const when = !m ? `${monthLabel(dep.from)} – ${monthLabel(dep.to)}` : wk ? `Week ${isoWeek(wk)} (${depWeekRange({ monday: wk })})` : monthLabel(mo);
+  const inRange = (x) => { const xm = x.date.slice(0, 7); return xm >= dep.from && xm <= dep.to; };
   openBls([a, bb, when].filter(Boolean).join(" › "),
-    (x) => x[k0] === a && (!bb || x[k1] === bb) && (!mo || x.date.startsWith(mo)) && (!wk || isoWeek(x.date) === +wk));
+    (x) => x[k0] === a && (!bb || x[k1] === bb) && (!mo || x.date.startsWith(mo)) && (!wk || (mondayOf(x.date) === wk && inRange(x))));
 };
 $("depKpis").onclick = (e) => {
   const k = e.target.closest(".kpi"); if (!k || (!k.dataset.all && !k.dataset.month)) return;
@@ -2279,7 +2272,7 @@ $("depKpis").onclick = (e) => {
 };
 $("depXlsx").onclick = () => {
   const [k0, k1] = depKeys(), cols = depCols(), out = [];
-  const colName = (c) => (c.week ? `${monthLabel(c.m)} Week ${c.week}` : dep.monthsOpen.has(c.m) && c.weeks.length ? `${monthLabel(c.m)} Total` : monthLabel(c.m));
+  const colName = (c) => (c.monday ? `Week ${c.week} (${shortDate(c.monday)})` : monthLabel(c.m));
   const line = (a, b, r) => ({ [depLabel[k0]]: a, [depLabel[k1]]: b, ...Object.fromEntries(cols.map((c) => [colName(c), r.months[c.key] || 0])), "Grand Total": r.total });
   const rows = depRows(), grand = { total: 0, months: {} };
   for (const r of rows) {
@@ -2290,7 +2283,7 @@ $("depXlsx").onclick = () => {
   out.push(line("Grand Total", "", grand));
   const bls = depInRange().map((x) => ({ "HBL No": x.bl, "HBL Date": new Date(x.date + "T00:00"), Shipper: x.shipper, Consignee: x.consignee, "PLR Agent": x.plrAgent,
     PLR: x.plr, POL: x.pol, POD: x.pod, FPD: x.fpd, "Job No": x.job, Cargo: x.cargo, "Number of Containers": x.tanks.length, "Container Nos": x.tanks.join(",") }));
-  writeXlsx(`SAR_Tank_Deployment_${todayIso()}.xlsx`, [[dep.group === "agent" ? "By Shipper" : "By PLR Agent", out, [40, 34, ...cols.map((c) => (c.week ? 15 : 10)), 11]],
+  writeXlsx(`SAR_Tank_Deployment_${todayIso()}.xlsx`, [[dep.group === "agent" ? "By Shipper" : "By PLR Agent", out, [40, 34, ...cols.map((c) => (c.monday ? 17 : 10)), 11]],
     ["BLs", bls, [20, 12, 36, 36, 32, 16, 16, 16, 16, 20, 12, 10, 60], 1]]);
 };
 

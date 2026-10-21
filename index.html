@@ -44,6 +44,7 @@
   .side nav a:hover { background: rgb(255 255 255 / .08); color: #fff; transform: translateX(2px); }
   .side nav a[aria-current="page"] { background: rgb(255 255 255 / .14); color: #fff; }
   .side nav a[aria-current="page"] svg { opacity: 1; }
+  .perf-blank { padding: 80px 16px; text-align: center; font-size: 14px; color: var(--ink-soft); }
   .side nav a.sub { padding: 6px 10px 6px 35px; font-size: 12px; font-weight: 500; color: #9AB0D4; }
   .side nav a.sub[aria-current="true"] { background: rgb(255 255 255 / .08); color: #fff; font-weight: 600; }
   .side nav a[aria-current="page"]::before { content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: #fff; }
@@ -631,9 +632,10 @@
 
 <main id="app" class="hidden">
   <div class="alert hidden" id="dataError" role="alert"></div>
+  <div class="perf-blank hidden" id="perfBlank">Pick <b>Billing Details</b>, <b>Agent Detail</b> or <b>Trade Lane Detail</b> under Performance in the menu.</div>
   <div class="kpis" id="kpis"></div>
 
-  <div class="card viewbar">
+  <div class="card viewbar" id="perfViewbar">
     <div><h2 id="viewTitle">Revenue Details</h2><p class="sub" id="viewSub"></p></div>
     <div class="view-toggle" id="viewToggle" role="group" aria-label="Show as">
       <button data-mode="table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>Table</button>
@@ -1058,7 +1060,7 @@ const state = {
   from: `${DEFAULT_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
   mode: store.get("sar.salesMode", "table") === "chart" ? "chart" : "table",
   currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
-  detail: "billing", detailQ: "", detailAll: false,
+  detail: null, detailQ: "", detailAll: false,   // null = Performance clicked, nothing picked yet (blank page)
   charges: new Set(DEFAULT_CHARGES), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
@@ -1126,7 +1128,7 @@ function route(next) {
   markPerfSub(page);
   $("pageTitle").textContent = PAGES[page];
   $("pageTitle").classList.add("hidden");
-  $("filters").classList.toggle("hidden", page !== "sales");
+  $("filters").classList.toggle("hidden", page !== "sales" || !state.detail);
   document.title = `${PAGES[page]} · SAR ISO Tank SG`;
   $("app").classList.toggle("hidden", page !== "sales");
   $("adminPage").classList.toggle("hidden", page !== "admin");
@@ -1155,11 +1157,12 @@ $("backdrop").onclick = closeMenu;
 for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
   const a = e.target.closest("a[data-page]"); if (!a) return;
   e.preventDefault();
+  const perf = a.dataset.page === "sales";
   if (a.dataset.detail) {   // Performance sub-item: open that table
     Object.assign(state, { detail: a.dataset.detail, mode: "table", detailQ: "", detailAll: false }); $("detailSearch").value = "";
-  }
+  } else if (perf) state.detail = null;   // Performance itself: blank page
   route(a.dataset.page);
-  if (a.dataset.detail && state.lines.length) render();
+  if (perf && state.lines.length) render();
   if (a.dataset.detail) $("tableView").scrollIntoView({ behavior: "smooth", block: "start" });
 };
 // Billing Details / Agent Detail / Trade Lane Detail sit under Performance in the sidebar (table view only).
@@ -1284,8 +1287,13 @@ const allChargesOn = () => allCharges().every((c) => state.charges.has(c));
 const g = () => granularity(state.view, state.from, state.to);
 
 function render() {
-  renderFilters();
   markPerfSub();
+  const blank = !state.detail;
+  $("perfBlank").classList.toggle("hidden", !blank);
+  for (const id of ["kpis", "perfViewbar", "footnote"]) $(id).classList.toggle("hidden", blank);
+  if (currentPage === "sales") $("filters").classList.toggle("hidden", blank);
+  if (blank) { $("chartView").classList.add("hidden"); $("tableView").classList.add("hidden"); return; }
+  renderFilters();
   renderChargeFilter();
   const lines = inPeriod(), k = kpis(lines), kAll = kpis(inPeriodAll());   // Total Revenue card always covers every charge
 

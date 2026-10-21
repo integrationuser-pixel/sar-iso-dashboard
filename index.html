@@ -286,6 +286,11 @@
   .inv-table th.av { text-align: center; background: #6E8BC4; color: #fff; }
   .inv-table th.gt, .inv-table td.gt { background: #F0F4FF; font-weight: 700; }
   .inv-table td.av30 { background: #F2FBF6; }
+  /* ageing of available tanks: over 30 days light yellow, over 60 / 90 days light red */
+  .inv-table td.age30 { background: #FFF6D6; }
+  .inv-table td.age60 { background: #FDE4E1; }
+  .inv-table tr.ctot td.age30, .inv-table tfoot td.age30 { background: #FBEBB5; }
+  .inv-table tr.ctot td.age60, .inv-table tfoot td.age60 { background: #F8D0CB; }
   .inv-table tr.ctot td { background: #F6F8FC; font-weight: 700; font-size: 13px; }
   .inv-table tr.ctot td.gt { background: #E4EBFA; }
   .inv-table .tg { margin-right: 6px; }
@@ -2023,7 +2028,8 @@ function renderInv() {
     + card("urus", "Repair / Survey", grand.ur + grand.us, `${n0(grand.ur)} UR · ${n0(grand.us)} US`, "#C24A2E");
 
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : ""}</td>`;
-  const nums = (r, base) => INV_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`, k === "av30" ? "av30" : "")).join("") + cell(r.total, base, "gt");
+  const ageCls = (k) => (k === "av30" ? "av30" : k === "av60" ? "age30" : k === "av90" || k === "av91" ? "age60" : "");
+  const nums = (r, base) => INV_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`, ageCls(k))).join("") + cell(r.total, base, "gt");
   let body = "";
   for (const g of groups) {
     const open = !inv.closed.has(g.country), ck = esc(g.country);
@@ -2039,7 +2045,7 @@ function renderInv() {
       <tr><th class="txt wrap">Depot Country</th><th class="txt dep wrap">Depot Name</th><th class="txt wrap">Depot Port</th><th class="txt wrap">Depot Agent</th><th class="txt wrap">Depot Billing Party</th>
         ${INV_COLS.map(([k, l]) => `<th class="${k.startsWith("av") ? "av" : "st"}">${k.startsWith("av") ? l : "0"}</th>`).join("")}<th class="gt wrap">Grand Total</th></tr></thead>
     <tbody>${body || '<tr><td colspan="14" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
-    <tfoot><tr><td class="txt">Grand Total</td><td class="txt dep"></td><td></td><td></td><td></td>${INV_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
+    <tfoot><tr><td class="txt">Grand Total</td><td class="txt dep"></td><td></td><td></td><td></td>${INV_COLS.map(([k]) => `<td class="${ageCls(k)}">${n0(grand[k])}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
   // freeze the two header rows and the Depot Name column (left offset = width of the Country column)
   const tbl = $("invTable"), hr = tbl.tHead.rows, h = hr[0].getBoundingClientRect().height;
   for (const th of hr[1].cells) th.style.top = `${h}px`;

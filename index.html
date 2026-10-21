@@ -2154,7 +2154,8 @@ function depCols() {
   for (let d = mondayOf(`${dep.from}-01`); d <= end && cols.length < 600; d = addDays(d, 7)) cols.push({ key: `wk:${d}`, monday: d, week: isoWeek(d) });
   return cols;
 }
-const depWeekLabel = (c) => `Week ${c.week}`;
+const isoWeekName = (monday) => `${addDays(monday, 3).slice(0, 4)}-W${String(isoWeek(monday)).padStart(2, "0")}`;   // ISO 8601, e.g. 2026-W07
+const depWeekLabel = (c) => isoWeekName(c.monday);
 const depWeekRange = (c) => `${shortDate(c.monday)} – ${shortDate(addDays(c.monday, 6))}`;
 const depKeys = () => (dep.group === "agent" ? ["plrAgent", "shipper"] : ["shipper", "plrAgent"]);
 const depLabel = { shipper: "Shipper", plrAgent: "PLR Agent" };
@@ -2207,7 +2208,7 @@ function renderDep() {
   for (const b of $("depGroup").children) b.setAttribute("aria-pressed", b.dataset.g === dep.group);
   for (const b of $("depPeriod").children) b.setAttribute("aria-pressed", b.dataset.p === dep.period);
   $("depTableSub").textContent = dep.period === "week"
-    ? "Number of tanks on export BLs by HBL week (ISO weeks, Monday start); click a number for the BLs"
+    ? "Number of tanks on export BLs by HBL week — ISO 8601 weeks (Monday to Sunday, week 1 holds the year's first Thursday); click a number for the BLs"
     : "Number of tanks on export BLs by HBL month; click a number for the BLs";
   const [k0, k1] = depKeys(), bls = depInRange();
   const tanks = bls.reduce((a, b) => a + b.tanks.length, 0);
@@ -2231,7 +2232,7 @@ function renderDep() {
   const weekly = dep.period === "week";
   const cells = (r, attrs) => cols.map((c) => cell(r.months[c.key], `${attrs} data-m="${c.key}"`, weekly ? "" : "mtot")).join("") + cell(r.total, attrs, "gt");
   const head1 = `<th class="txt">${depLabel[k0]}</th><th class="txt">${depLabel[k1]}</th>`
-    + cols.map((c) => (weekly ? `<th title="${depWeekRange(c)}">${depWeekLabel(c)}<span class="wk-date">${shortDate(c.monday)}</span></th>` : `<th class="mtot">${monthLabel(c.m)}</th>`)).join("")
+    + cols.map((c) => (weekly ? `<th title="${depWeekRange(c)}">${depWeekLabel(c)}<span class="wk-date">${shortDate(c.monday)} – ${shortDate(addDays(c.monday, 6))}</span></th>` : `<th class="mtot">${monthLabel(c.m)}</th>`)).join("")
     + `<th class="gt">Grand Total</th>`;
   let body = "";
   for (const r of rows) {
@@ -2260,7 +2261,7 @@ $("depTable").onclick = (e) => {
   const b = e.target.closest("button.num"); if (!b) return;
   const [k0, k1] = depKeys(), { a, b: bb, m } = b.dataset;
   const wk = m?.startsWith("wk:") ? m.slice(3) : null, mo = m && !wk ? m : null;
-  const when = !m ? `${monthLabel(dep.from)} – ${monthLabel(dep.to)}` : wk ? `Week ${isoWeek(wk)} (${depWeekRange({ monday: wk })})` : monthLabel(mo);
+  const when = !m ? `${monthLabel(dep.from)} – ${monthLabel(dep.to)}` : wk ? `${isoWeekName(wk)} (${depWeekRange({ monday: wk })})` : monthLabel(mo);
   const inRange = (x) => { const xm = x.date.slice(0, 7); return xm >= dep.from && xm <= dep.to; };
   openBls([a, bb, when].filter(Boolean).join(" › "),
     (x) => x[k0] === a && (!bb || x[k1] === bb) && (!mo || x.date.startsWith(mo)) && (!wk || (mondayOf(x.date) === wk && inRange(x))));
@@ -2272,7 +2273,7 @@ $("depKpis").onclick = (e) => {
 };
 $("depXlsx").onclick = () => {
   const [k0, k1] = depKeys(), cols = depCols(), out = [];
-  const colName = (c) => (c.monday ? `Week ${c.week} (${shortDate(c.monday)})` : monthLabel(c.m));
+  const colName = (c) => (c.monday ? `${isoWeekName(c.monday)} (${shortDate(c.monday)} – ${shortDate(addDays(c.monday, 6))})` : monthLabel(c.m));
   const line = (a, b, r) => ({ [depLabel[k0]]: a, [depLabel[k1]]: b, ...Object.fromEntries(cols.map((c) => [colName(c), r.months[c.key] || 0])), "Grand Total": r.total });
   const rows = depRows(), grand = { total: 0, months: {} };
   for (const r of rows) {
@@ -2283,7 +2284,7 @@ $("depXlsx").onclick = () => {
   out.push(line("Grand Total", "", grand));
   const bls = depInRange().map((x) => ({ "HBL No": x.bl, "HBL Date": new Date(x.date + "T00:00"), Shipper: x.shipper, Consignee: x.consignee, "PLR Agent": x.plrAgent,
     PLR: x.plr, POL: x.pol, POD: x.pod, FPD: x.fpd, "Job No": x.job, Cargo: x.cargo, "Number of Containers": x.tanks.length, "Container Nos": x.tanks.join(",") }));
-  writeXlsx(`SAR_Tank_Deployment_${todayIso()}.xlsx`, [[dep.group === "agent" ? "By Shipper" : "By PLR Agent", out, [40, 34, ...cols.map((c) => (c.monday ? 17 : 10)), 11]],
+  writeXlsx(`SAR_Tank_Deployment_${todayIso()}.xlsx`, [[dep.group === "agent" ? "By Shipper" : "By PLR Agent", out, [40, 34, ...cols.map((c) => (c.monday ? 28 : 10)), 11]],
     ["BLs", bls, [20, 12, 36, 36, 32, 16, 16, 16, 16, 20, 12, 10, 60], 1]]);
 };
 

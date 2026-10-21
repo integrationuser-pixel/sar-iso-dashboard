@@ -263,9 +263,10 @@
   .mr-depot th:nth-child(-n+3), .mr-depot td:nth-child(-n+3) { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
   .mr-depot td:nth-child(2), .mr-depot td:nth-child(3) { max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); }
   .mr-depot td:first-child { min-width: 200px; font-weight: 600; }
-  .mr-depot tr.sub td { background: #F6F8FC; font-weight: 700; }
+  .mr-depot tr.dp0 td { font-weight: 700; }
+  .mr-depot tr.dp1 { background: #FCFDFF; }
+  .mr-depot .tg { margin-right: 6px; }
   .mr-depot th.rt, .mr-depot td.rt { background: #F0F4FF; font-weight: 700; }
-  .mr-depot tr.sub td.rt { background: #E4EBFA; }
   .mr-depot tfoot td, .mr-pivot tfoot td { font-family: "JetBrains Mono", monospace; }
   .mr-depot tfoot td:first-child, .mr-pivot tfoot td:first-child { font-family: "Plus Jakarta Sans", sans-serif; }
   .tank-table td { font-family: "Plus Jakarta Sans", sans-serif; }
@@ -682,6 +683,7 @@
         <div><h2>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
         <div class="tools" style="margin:0">
           <input class="search" id="mrDepotSearch" placeholder="Search depot, agent, principal…">
+          <button class="btn" id="mrDepotToggleAll">Expand all</button>
           <button class="btn" id="mrDepotXlsx">Export to Excel</button>
         </div>
       </div>
@@ -1722,7 +1724,7 @@ const MR_COLORS = { Empty: "#2563EB", "Loaded Full": "#1F8A4C", "Sent to Consign
                     "Under Cleaning": "#D98E04", "Under Repair": "#C24A2E", "Under Survey": "#C99A3B", Other: "#94A3B8" };
 const MR_LABEL = { Other: "Other Activity" };
 const PRINCIPAL_COLORS = ["#1E3A8A", "#0E9AA7", "#D98E04", "#7B5EA7", "#1F8A4C", "#C24A2E"];
-const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), principal: "", open: new Set(), depotQ: "", drill: null, drillQ: "" };
+const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), principal: "", open: new Set(), depotOpen: new Set(), depotQ: "", drill: null, drillQ: "" };
 const n0 = (v) => Number(v || 0).toLocaleString("en-IN");
 const DAY_MS = 86400000;
 const idleDays = (t) => (t.date ? Math.max(0, Math.floor((Date.now() - new Date(t.date + "T00:00")) / DAY_MS)) : null);
@@ -1911,25 +1913,37 @@ function renderDepot() {
   const depots = new Set(rows.map((r) => r.depot)).size;
   $("mrDepotSub").textContent = `${n0(grand.total)} tanks at ${n0(depots)} depots (to-location of the latest movement)`;
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : '<span class="dash">–</span>'}</td>`;
-  const line = (r, cls, sub) => {
-    const base = sub ? `data-d="${esc(r.depot)}"` : `data-d="${esc(r.depot)}" data-ag="${esc(r.agent)}" data-p="${esc(r.principal)}"`;
-    return `<tr class="${cls}"><td title="${esc(r.depot)}">${esc(sub ? `${r.depot} — TOTAL` : r.depot)}</td><td title="${esc(r.agent)}">${esc(r.agent)}</td><td title="${esc(r.principal)}">${esc(r.principal)}</td>`
-      + DEPOT_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`)).join("")
-      + cell(r.total, base, "rt") + "</tr>";
-  };
+  // One row per depot with its totals; + opens it to show each agent / principal at that depot.
+  const nums = (r, base) => DEPOT_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`)).join("") + cell(r.total, base, "rt");
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   let body = "", i = 0;
+  const searching = !!mr.depotQ;
   while (i < rows.length) {
     const d = rows[i].depot, group = [];
     while (i < rows.length && rows[i].depot === d) group.push(rows[i++]);
-    body += group.map((r) => line(r, "")).join("");
-    if (group.length > 1) body += line(sumRows(group, d), "sub", true);
+    const open = searching || mr.depotOpen.has(d), tot = sumRows(group, d);
+    const agents = new Set(group.map((r) => r.agent)).size, principals = new Set(group.map((r) => r.principal)).size;
+    body += `<tr class="dp0"><td title="${esc(d)}"><button class="tg" data-dtg="${esc(d)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(d)}</td>`
+      + `<td>${open ? "" : `<span class="dash">${plural(agents, "agent")}</span>`}</td><td>${open ? "" : `<span class="dash">${plural(principals, "principal")}</span>`}</td>`
+      + nums(tot, `data-d="${esc(d)}"`) + "</tr>";
+    if (open) body += group.map((r) => `<tr class="dp1"><td></td><td title="${esc(r.agent)}">${esc(r.agent)}</td><td title="${esc(r.principal)}">${esc(r.principal)}</td>`
+      + nums(r, `data-d="${esc(r.depot)}" data-ag="${esc(r.agent)}" data-p="${esc(r.principal)}"`) + "</tr>").join("");
   }
+  const allDepots = [...new Set(rows.map((r) => r.depot))];
+  $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) ? "Collapse all" : "Expand all";
   $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th>Principal</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}<th class="rt">Row Total</th></tr></thead>
     <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
     <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}<td>${n0(grand.total)}</td></tr></tfoot>`;
 }
-$("mrDepotSearch").oninput = (e) => { mr.depotQ = e.target.value; renderDepot(); };
+$("mrDepotSearch").oninput = (e) => { mr.depotQ = e.target.value; renderDepot(); };   // matching depots open while searching
+$("mrDepotToggleAll").onclick = () => {
+  const ds = [...new Set(depotRows().map((r) => r.depot))];
+  if (ds.length && ds.every((d) => mr.depotOpen.has(d))) mr.depotOpen.clear(); else for (const d of ds) mr.depotOpen.add(d);
+  renderDepot();
+};
 $("mrDepotTable").onclick = (e) => {
+  const tg = e.target.closest("[data-dtg]");
+  if (tg) { const d = tg.dataset.dtg; mr.depotOpen.has(d) ? mr.depotOpen.delete(d) : mr.depotOpen.add(d); return renderDepot(); }
   const b = e.target.closest("button.num"); if (!b) return;
   const { d, ag, p, c } = b.dataset;
   const label = (DEPOT_COLS.find(([k]) => k === c) || [])[1] || "All";

@@ -1036,8 +1036,8 @@ const NO_LANE = "(No trade lane — invoices without a BL)";
 const nOtherLabel = () => (allChargesOn() ? "Total Revenue" : "Total Revenue — selected charges");
 let detailOthers = [];
 const DEFAULT_CHARGES = ["TANK RENT", "IMPORT DETENTION CHARGES", "LEASE RENT CHARGES", "EXPORT DETENTION CHARGES", "OCEAN FREIGHT CHARGES"];
-// Default: Monthly view from April 2026 to the end of the current month.
-const DEFAULT_FROM_MONTH = "2026-04";
+// Default: Monthly view from February 2026 (SAR Global's first invoices) to the end of the current month.
+const DEFAULT_FROM_MONTH = "2026-02";
 const thisMonth = () => iso(new Date()).slice(0, 7);
 const monthEnd = (m) => lastOfMonth(+m.slice(0, 4), +m.slice(5, 7) - 1);
 const state = {

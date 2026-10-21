@@ -322,11 +322,23 @@
   .dep-table th.mtot, .dep-table td.mtot { background: #F6F8FC; }
   .dep-table th.mhead { text-align: left; }
   .dep-table tbody tr.lv1 { background: #FCFDFF; }
+  /* Frozen on the left: PLR Agent / Shipper, Shipper / PLR Agent, Grand Total */
+  .dep-table tr > :nth-child(-n+3) { position: sticky; box-sizing: border-box; background: inherit; z-index: 2; }
+  .dep-table tr > :nth-child(1) { left: 0; width: 250px; min-width: 250px; max-width: 250px; }
+  .dep-table tr > :nth-child(2) { left: 250px; width: 210px; min-width: 210px; max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
+  .dep-table tr > :nth-child(3) { left: 460px; width: 96px; min-width: 96px; max-width: 96px; box-shadow: inset -1px 0 0 var(--line); }
+  .dep-table tr > td.gt:nth-child(3) { background: #F0F4FF; }
+  .dep-table thead th:nth-child(-n+3) { z-index: 5; background: var(--thead); }
+  .dep-table thead th.gt:nth-child(3) { background: #E6EDFC; }
+  .dep-table tfoot td:nth-child(-n+3) { z-index: 4; background: var(--grand); }
+  .dep-table tbody td[colspan] { position: static; width: auto; max-width: none; }
   .dep-table tbody tr:hover { background: #EFF4FF; }
   .dep-table .tg { margin-right: 6px; }
   .bl-tanks { max-width: 340px; overflow: hidden; text-overflow: ellipsis; font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--ink-soft); }
   @media (max-width: 1200px) { .kpis.dep-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (max-width: 640px) { .kpis.dep-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .kpis.dep-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dep-table tr > :nth-child(1) { width: 170px; min-width: 170px; max-width: 170px; }
+    .dep-table tr > :nth-child(2), .dep-table tr > :nth-child(3) { position: static; } }
 
   /* ---------- finance recovery ---------- */
   #finPage { align-content: start; }
@@ -2230,10 +2242,9 @@ function renderDep() {
   for (const r of rows) { grand.total += r.total; for (const [m, v] of Object.entries(r.months)) grand.months[m] = (grand.months[m] || 0) + v; }
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : ""}</td>`;
   const weekly = dep.period === "week";
-  const cells = (r, attrs) => cols.map((c) => cell(r.months[c.key], `${attrs} data-m="${c.key}"`, weekly ? "" : "mtot")).join("") + cell(r.total, attrs, "gt");
-  const head1 = `<th class="txt">${depLabel[k0]}</th><th class="txt">${depLabel[k1]}</th>`
-    + cols.map((c) => (weekly ? `<th title="${depWeekRange(c)}">${depWeekLabel(c)}<span class="wk-date">${shortDate(c.monday)} – ${shortDate(addDays(c.monday, 6))}</span></th>` : `<th class="mtot">${monthLabel(c.m)}</th>`)).join("")
-    + `<th class="gt">Grand Total</th>`;
+  const cells = (r, attrs) => cell(r.total, attrs, "gt") + cols.map((c) => cell(r.months[c.key], `${attrs} data-m="${c.key}"`, weekly ? "" : "mtot")).join("");   // Grand Total right after the names
+  const head1 = `<th class="txt">${depLabel[k0]}</th><th class="txt">${depLabel[k1]}</th><th class="gt">Grand Total</th>`
+    + cols.map((c) => (weekly ? `<th title="${depWeekRange(c)}">${depWeekLabel(c)}<span class="wk-date">${shortDate(c.monday)} – ${shortDate(addDays(c.monday, 6))}</span></th>` : `<th class="mtot">${monthLabel(c.m)}</th>`)).join("");
   let body = "";
   for (const r of rows) {
     const open = dep.open.has(r.name), a0 = `data-a="${esc(r.name)}"`;
@@ -2242,8 +2253,8 @@ function renderDep() {
     if (open) for (const k of r.kids) body += `<tr class="lv1"><td class="txt"></td><td class="txt l1" title="${esc(k.name)}">${esc(k.name)}</td>${cells(k, `${a0} data-b="${esc(k.name)}"`)}</tr>`;
   }
   $("depTable").innerHTML = `<thead><tr>${head1}</tr></thead>
-    <tbody>${body || `<tr><td colspan="${3 + cols.length}" style="text-align:center;padding:30px;color:#94a3b8">No BLs in this period</td></tr>`}</tbody>
-    <tfoot><tr><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td>${cols.map((c) => `<td class="${weekly ? "" : "mtot"}">${n0(grand.months[c.key] || 0)}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
+    <tbody>${body || `<tr><td colspan="${3 + cols.length}" style="text-align:center;padding:30px;color:#94a3b8">No data available for this period</td></tr>`}</tbody>
+    <tfoot><tr><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td><td class="gt">${n0(grand.total)}</td>${cols.map((c) => `<td class="${weekly ? "" : "mtot"}">${n0(grand.months[c.key] || 0)}</td>`).join("")}</tr></tfoot>`;
   $("depToggleAll").textContent = rows.length && rows.every((r) => dep.open.has(r.name)) ? "Collapse all" : "Expand all";
 }
 $("depToggleAll").onclick = () => {
@@ -2274,7 +2285,7 @@ $("depKpis").onclick = (e) => {
 $("depXlsx").onclick = () => {
   const [k0, k1] = depKeys(), cols = depCols(), out = [];
   const colName = (c) => (c.monday ? `${isoWeekName(c.monday)} (${shortDate(c.monday)} – ${shortDate(addDays(c.monday, 6))})` : monthLabel(c.m));
-  const line = (a, b, r) => ({ [depLabel[k0]]: a, [depLabel[k1]]: b, ...Object.fromEntries(cols.map((c) => [colName(c), r.months[c.key] || 0])), "Grand Total": r.total });
+  const line = (a, b, r) => ({ [depLabel[k0]]: a, [depLabel[k1]]: b, "Grand Total": r.total, ...Object.fromEntries(cols.map((c) => [colName(c), r.months[c.key] || 0])) });
   const rows = depRows(), grand = { total: 0, months: {} };
   for (const r of rows) {
     for (const k of r.kids) out.push(line(r.name, k.name, k));
@@ -2284,7 +2295,7 @@ $("depXlsx").onclick = () => {
   out.push(line("Grand Total", "", grand));
   const bls = depInRange().map((x) => ({ "HBL No": x.bl, "HBL Date": new Date(x.date + "T00:00"), Shipper: x.shipper, Consignee: x.consignee, "PLR Agent": x.plrAgent,
     PLR: x.plr, POL: x.pol, POD: x.pod, FPD: x.fpd, "Job No": x.job, Cargo: x.cargo, "Number of Containers": x.tanks.length, "Container Nos": x.tanks.join(",") }));
-  writeXlsx(`SAR_Tank_Deployment_${todayIso()}.xlsx`, [[dep.group === "agent" ? "By Shipper" : "By PLR Agent", out, [40, 34, ...cols.map((c) => (c.monday ? 28 : 10)), 11]],
+  writeXlsx(`SAR_Tank_Deployment_${todayIso()}.xlsx`, [[dep.group === "agent" ? "By Shipper" : "By PLR Agent", out, [40, 34, 11, ...cols.map((c) => (c.monday ? 28 : 10))]],
     ["BLs", bls, [20, 12, 36, 36, 32, 16, 16, 16, 16, 20, 12, 10, 60], 1]]);
 };
 

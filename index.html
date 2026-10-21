@@ -2150,7 +2150,7 @@ $("invXlsx").onclick = () => {
 // ============================================================ Tank Deployment
 // Tanks on export BLs (SAR Global PTE Ltd) per HBL month, by shipper or PLR agent — same as the Syscon BL Register pivot.
 const dep = { data: null, from: "", to: "", group: store.get("sar.depGroup", "shipper"), period: store.get("sar.depPeriod", "month") === "week" ? "week" : "month",
-              q: "", open: new Set(), drill: null, drillQ: "" };
+              months: [], monthRange: null, q: "", open: new Set(), drill: null, drillQ: "" };
 // Monthly view: one column per HBL month. Weekly view: one column per ISO week (Monday start), which is
 // what the Syscon BL Register "WeeK" column uses; a week is counted by its BLs that fall in the selected months.
 function isoWeek(s) {
@@ -2183,10 +2183,10 @@ async function loadDep() {
     const months = dep.data.bls.map((b) => b.date.slice(0, 7)).sort();
     const first = months[0] || thisMonth(), last = thisMonth() > (months.at(-1) || "") ? thisMonth() : months.at(-1);
     const all = monthsBetween(first, last);
-    if (!dep.from || !all.includes(dep.from)) dep.from = first;
+    dep.months = all;
+    if (!dep.from || !all.includes(dep.from)) { dep.from = first; dep.to = last; if (dep.period === "week") dep.from = dep.to = depCurrentMonth(); }
     if (!dep.to || !all.includes(dep.to)) dep.to = last;
-    const opts = (sel) => all.map((m) => `<option value="${m}"${m === sel ? " selected" : ""}>${monthLabel(m)}</option>`).join("");
-    $("depFrom").innerHTML = opts(dep.from); $("depTo").innerHTML = opts(dep.to);
+    depFillMonths();
     renderDep();
   } catch (e) {
     if (e.message === "signed out" || e.message === "no access") return;
@@ -2262,9 +2262,21 @@ $("depToggleAll").onclick = () => {
   if (rows.length && rows.every((r) => dep.open.has(r.name))) dep.open.clear(); else for (const r of rows) dep.open.add(r.name);
   renderDep();
 };
+// Weekly view opens on the current month; going back to Monthly restores the months picked there.
+const depCurrentMonth = () => (dep.months.includes(thisMonth()) ? thisMonth() : dep.months.at(-1));
+function depFillMonths() {
+  const opts = (sel) => dep.months.map((m) => `<option value="${m}"${m === sel ? " selected" : ""}>${monthLabel(m)}</option>`).join("");
+  $("depFrom").innerHTML = opts(dep.from); $("depTo").innerHTML = opts(dep.to);
+}
 $("depPeriod").onclick = (e) => {
   const b = e.target.closest("button[data-p]"); if (!b || b.dataset.p === dep.period) return;
-  dep.period = b.dataset.p; store.set("sar.depPeriod", dep.period); renderDep();
+  dep.period = b.dataset.p; store.set("sar.depPeriod", dep.period);
+  if (dep.months.length) {
+    if (dep.period === "week") { dep.monthRange = { from: dep.from, to: dep.to }; dep.from = dep.to = depCurrentMonth(); }
+    else { const r = dep.monthRange || { from: dep.months[0], to: dep.months.at(-1) }; dep.from = r.from; dep.to = r.to; }
+    depFillMonths();
+  }
+  renderDep();
 };
 $("depTable").onclick = (e) => {
   const tg = e.target.closest("[data-tg]");

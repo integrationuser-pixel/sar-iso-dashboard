@@ -661,11 +661,18 @@
   <div class="alert hidden" id="mrErr" role="alert"></div>
   <div id="mrInventory" class="mr-tab">
     <div class="kpis mr-kpis" id="mrKpis"></div>
-    <div class="row">
+    <div class="card viewbar">
+      <div><h2>Inventory Details</h2><p class="sub" id="mrViewSub"></p></div>
+      <div class="view-toggle" id="mrViewToggle" role="group" aria-label="Show as">
+        <button data-mode="table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>Table</button>
+        <button data-mode="chart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Chart</button>
+      </div>
+    </div>
+    <div class="row" id="mrChartView">
       <section class="card panel"><h2>Tanks by Agent</h2><p class="sub">Top 10 agents holding tanks (agent on the latest movement) — click a bar for the tanks</p><div class="chart"><canvas id="mrAgentChart"></canvas></div></section>
       <section class="card panel"><h2>Tanks by Principal</h2><p class="sub">Click a slice for the tanks</p><div class="chart" style="height:280px"><canvas id="mrPrincipalChart"></canvas></div><div class="legend" id="mrPrincipalLegend"></div></section>
     </div>
-    <section class="card panel">
+    <section class="card panel" id="mrTableView">
       <div class="tools" style="justify-content:space-between">
         <div><h2>Principal → Activity</h2><p class="sub" style="margin-bottom:0">Tanks by principal and current activity — click a number for the tanks</p></div>
         <div class="tools" style="margin:0">
@@ -1724,7 +1731,7 @@ const MR_COLORS = { Empty: "#2563EB", "Loaded Full": "#1F8A4C", "Sent to Consign
                     "Under Cleaning": "#D98E04", "Under Repair": "#C24A2E", "Under Survey": "#C99A3B", Other: "#94A3B8" };
 const MR_LABEL = { Other: "Other Activity" };
 const PRINCIPAL_COLORS = ["#1E3A8A", "#0E9AA7", "#D98E04", "#7B5EA7", "#1F8A4C", "#C24A2E"];
-const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), principal: "", open: new Set(), depotOpen: new Set(), depotQ: "", drill: null, drillQ: "" };
+const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: store.get("sar.mrMode", "table") === "chart" ? "chart" : "table", principal: "", open: new Set(), depotOpen: new Set(), depotQ: "", drill: null, drillQ: "" };
 const n0 = (v) => Number(v || 0).toLocaleString("en-IN");
 const DAY_MS = 86400000;
 const idleDays = (t) => (t.date ? Math.max(0, Math.floor((Date.now() - new Date(t.date + "T00:00")) / DAY_MS)) : null);
@@ -1781,6 +1788,15 @@ function renderInventory() {
         b === "Empty" ? `${n0(avail)} available · ${n0(alloc)} allocated` : pct(by[b]),
         MR_COLORS[b])).join("");
 
+  // Table and Chart are separate views; only the visible one is drawn (Chart.js can't size a hidden canvas).
+  const chart = mr.mode === "chart";
+  for (const b of $("mrViewToggle").children) b.setAttribute("aria-pressed", b.dataset.mode === mr.mode);
+  $("mrChartView").classList.toggle("hidden", !chart);
+  $("mrTableView").classList.toggle("hidden", chart);
+  $("mrViewSub").textContent = chart ? "Tanks by agent and by principal — click a bar or slice for the tanks"
+                                     : "Tanks by principal and current activity — click a number for the tanks";
+  if (!chart) return renderMrPivot(tanks);
+
   // agents (top 10)
   const agents = [...tanks.reduce((m, t) => m.set(t.agent, (m.get(t.agent) || 0) + 1), new Map())].sort((a, b) => b[1] - a[1]).slice(0, 10);
   charts.mrAgent?.destroy();
@@ -1816,9 +1832,11 @@ function renderInventory() {
   $("mrPrincipalLegend").innerHTML = principals.map((p, i) =>
     `<button data-p="${esc(p[0])}"><span class="dot" style="background:${pColor(i)}"></span>${esc(p[0])} · ${n0(p[1])} (${(p[1] / total * 100).toFixed(0)}%)</button>`).join("")
     || '<span class="foot">No tanks</span>';
-
-  renderMrPivot(tanks);
 }
+$("mrViewToggle").onclick = (e) => {
+  const m = e.target.closest("button[data-mode]")?.dataset.mode;
+  if (m && m !== mr.mode) { mr.mode = m; store.set("sar.mrMode", m); renderInventory(); }
+};
 $("mrKpis").onclick = (e) => {
   const b = e.target.closest(".kpi"); if (!b) return;
   const k = b.dataset.bucket;

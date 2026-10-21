@@ -530,6 +530,15 @@
     <label class="f" id="toWrap">To <input type="date" id="to"></label>
     <span class="drf-divider"></span>
     <div class="seg" id="currency" aria-label="Currency"><button data-c="USD">USD</button><button data-c="INR">INR</button></div>
+    <span class="drf-divider"></span>
+    <span class="ms" id="chargeFilter">
+      <button class="btn" id="chargeBtn" aria-haspopup="true" aria-expanded="false">Charges ▾</button>
+      <div class="ms-panel hidden" id="chargePanel" role="dialog" aria-label="Filter charges">
+        <input class="search" id="chargeSearch" placeholder="Search charges…">
+        <div class="ms-actions"><button class="btn" data-ms="all">All</button><button class="btn" data-ms="none">None</button><button class="btn" data-ms="default">Default</button></div>
+        <div class="ms-list" id="chargeList"></div>
+      </div>
+    </span>
     <label class="f hidden" id="rateWrap">1 USD = ₹ <input type="number" id="rate" min="1" step="0.01" style="width:96px"></label>
   </div>
   <div class="page-head hidden" id="finHead">
@@ -616,14 +625,6 @@
     <div class="tools">
       <div class="seg" id="detailTabs"><button data-t="billing">Billing Details</button><button data-t="agent">Agent Detail</button><button data-t="lane">Trade Lane Detail</button></div>
       <span id="pivotTools">
-        <span class="ms" id="chargeFilter">
-          <button class="btn" id="chargeBtn" aria-haspopup="true" aria-expanded="false">Charges ▾</button>
-          <div class="ms-panel hidden" id="chargePanel" role="dialog" aria-label="Filter charges">
-            <input class="search" id="chargeSearch" placeholder="Search charges…">
-            <div class="ms-actions"><button class="btn" data-ms="all">All</button><button class="btn" data-ms="none">None</button><button class="btn" data-ms="default">Default</button></div>
-            <div class="ms-list" id="chargeList"></div>
-          </div>
-        </span>
         <button class="btn" id="pivotWeeks">Show weeks</button>
       </span>
       <input class="search" id="detailSearch" placeholder="Search…">
@@ -997,6 +998,7 @@ const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || 
 const VIEWS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"], ["custom", "Custom Range"]];
 // Billing Details shows these charges until the viewer changes the Charges filter.
 const NO_LANE = "(No trade lane — invoices without a BL)";
+const nOtherLabel = () => (allChargesOn() ? "Total Revenue" : "Total Revenue — selected charges");
 let detailOthers = [];
 const DEFAULT_CHARGES = ["TANK RENT", "IMPORT DETENTION CHARGES", "LEASE RENT CHARGES", "EXPORT DETENTION CHARGES", "OCEAN FREIGHT CHARGES"];
 // Default: Monthly view from April 2026 to the end of the current month.
@@ -1213,11 +1215,15 @@ function renderFilters() {
 }
 
 // ============================================================ render
-const inPeriod = () => state.lines.filter((l) => l.date >= state.from && l.date <= state.to);
+// The Charges filter applies to the whole Sales Performance page (KPIs, charts, all three tables).
+const inPeriodAll = () => state.lines.filter((l) => l.date >= state.from && l.date <= state.to);
+const inPeriod = () => inPeriodAll().filter((l) => state.charges.has(l.charge));
+const allChargesOn = () => allCharges().every((c) => state.charges.has(c));
 const g = () => granularity(state.view, state.from, state.to);
 
 function render() {
   renderFilters();
+  renderChargeFilter();
   const lines = inPeriod(), k = kpis(lines);
 
   const cards = [["Total Revenue", null], ["Lease Revenue", "Lease"], ["Detention Revenue", "Detention"], ["EXIM Revenue", "EXIM"], ["M&R Revenue", "M&R"]];
@@ -1226,7 +1232,7 @@ function render() {
     return `<button class="kpi" data-cat="${cat || ""}" title="${esc(money(v))}" style="border-top-color:${cat ? CAT_COLORS[cat] : "#1E3A8A"}">
       <div class="lbl">${label}</div>
       <div class="val">${moneyCr(v)}</div>
-      ${cat ? "" : `<div class="note muted">Gross ${moneyCr(k.gross)} · CN ${moneyCr(k.credit)}</div>`}</button>`;
+      ${cat ? "" : `<div class="note muted">${allChargesOn() ? "" : `${allCharges().filter((c) => state.charges.has(c)).length} of ${allCharges().length} charges · `}Gross ${moneyCr(k.gross)} · CN ${moneyCr(k.credit)}</div>`}</button>`;
   }).join("");
 
   // Only the visible view is drawn (Chart.js can't size a hidden canvas).
@@ -1246,7 +1252,7 @@ function render() {
     renderTable();
   }
 
-  $("footnote").textContent = "Source: SARFD tblInvoice — SAR Global PTE Ltd sales, sub-lease, sundry and M&R invoices, credit notes subtracted (debit notes and proformas excluded). Billing Details, Agent and Trade Lane tables all end on Total Revenue. Amounts in USD"
+  $("footnote").textContent = "Source: SARFD tblInvoice — SAR Global PTE Ltd sales, sub-lease, sundry and M&R invoices, credit notes subtracted (debit notes and proformas excluded). The Charges filter applies to the whole page; Billing Details also shows the charges left out. Amounts in USD"
     + (state.currency === "INR" ? `, shown in INR at ₹${state.rate}/USD` : "") + "."
     + (state.lastSync ? ` Last invoice sync ${new Date(state.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.` : "");
 }
@@ -1484,17 +1490,17 @@ function renderPivot() {
   pivotRows.push(root);
   // Charges not ticked in the Charges filter are added back below, so the table ends on Total Revenue.
   const q = state.detailQ.toLowerCase();
-  const otherLines = inPeriod().filter((l) => !state.charges.has(l.charge) && (!q || [l.charge, l.shipper, l.agent, l.pol, l.pod].some((v) => (v || "").toLowerCase().includes(q))));
+  const otherLines = inPeriodAll().filter((l) => !state.charges.has(l.charge) && (!q || [l.charge, l.shipper, l.agent, l.pol, l.pod].some((v) => (v || "").toLowerCase().includes(q))));
   const other = buildPivot(otherLines).root, nOther = new Set(otherLines.map((l) => l.charge)).size;
   const all = { cells: {}, total: root.total + other.total };
   for (const c of pivotCols) if (!c.grand) all.cells[c.key] = (root.cells[c.key] || 0) + (other.cells[c.key] || 0);
   const footRow = (label, node, cls = "") => { pivotRows.push(node); const i = pivotRows.length - 1;
     return `<tr class="${cls}"><td class="dim last" style="${CHARGE_COL}">${label}</td>${pivotCols.map((c, ci) => val(c.grand ? node.total : node.cells[c.key], i, ci)).join("")}</tr>`; };
   root.label = "Selected charges";
-  let foot = `<tr><td class="dim last" style="${CHARGE_COL}">Total — selected charges</td>${pivotCols.map((c, ci) => val(c.grand ? root.total : root.cells[c.key], pivotRows.length - 1, ci)).join("")}</tr>`;
+  let foot = `<tr><td class="dim last" style="${CHARGE_COL}">${nOtherLabel()}</td>${pivotCols.map((c, ci) => val(c.grand ? root.total : root.cells[c.key], pivotRows.length - 1, ci)).join("")}</tr>`;
   if (nOther) {
     foot += footRow(`Other charges (${nOther} not selected)`, Object.assign(other, { label: "Other charges", filter: { notCharges: new Set(state.charges) } }), "recon");
-    foot += footRow(q ? "Total — all charges" : "Total Revenue", Object.assign(all, { label: "All charges", filter: {} }), "grand-total");
+    foot += footRow("Total — all charges", Object.assign(all, { label: "All charges", filter: { allCharges: true } }), "grand-total");
   }
 
   $("detailTable").className = "pivot";
@@ -1536,12 +1542,12 @@ $("chargePanel").onclick = (e) => {
   e.stopPropagation();
   const act = e.target.closest("button[data-ms]")?.dataset.ms; if (!act) return;
   state.charges = new Set(act === "all" ? allCharges() : act === "default" ? DEFAULT_CHARGES : []);
-  saveCharges(); renderPivot();
+  saveCharges(); render(); renderChargeFilter();
 };
 $("chargeList").onchange = (e) => {
   const c = e.target.value; if (!c) return;
   e.target.checked ? state.charges.add(c) : state.charges.delete(c);
-  saveCharges(); renderPivot();
+  saveCharges(); render(); renderChargeFilter();   // whole page follows the Charges filter
 };
 $("chargeSearch").oninput = renderChargeFilter;
 document.addEventListener("click", (e) => {
@@ -1643,7 +1649,7 @@ function openDrill(f) {
 }
 function drillRows() {
   const f = state.drill, q = state.drillQ.toLowerCase();
-  const base = state.lines.filter((l) => matches(l, f));
+  const base = state.lines.filter((l) => matches(l, f) && (f.notCharges || f.allCharges || f.charge !== undefined || state.charges.has(l.charge)));
   return q ? base.filter((l) => [l.invoiceNo, l.agent, l.lane || "", l.charge, l.blNo, l.jobNo].some((v) => v.toLowerCase().includes(q))) : base;
 }
 function renderDrill() {

@@ -560,7 +560,7 @@
       <label class="f">From <select id="depFrom"></select></label>
       <label class="f">To <select id="depTo"></select></label>
       <div class="view-toggle" id="depGroup" role="group" aria-label="Group by">
-        <button data-g="agent">By PLR Agent</button><button data-g="shipper">By Shipper</button>
+        <button data-g="shipper">By PLR Agent</button><button data-g="agent">By Shipper</button>
       </div>
     </div>
   </div>
@@ -2184,7 +2184,7 @@ function renderDep() {
   const synced = dep.data.lastSync ? new Date(dep.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
   $("depSub").textContent = `Export BLs of SAR Global PTE Ltd by HBL date · BLs up to ${dep.data.dataTo ? shortDate(dep.data.dataTo) : "—"} · synced ${synced}`;
   $("depSub").title = $("depSub").textContent;
-  $("depTitle").textContent = `Tanks Deployed by ${depLabel[k0]}`;
+  $("depTitle").textContent = `Tanks Deployed — ${depLabel[k0]} › ${depLabel[k1]}`;
   $("depSearch").placeholder = `Search ${depLabel[k0].toLowerCase()} or ${depLabel[k1].toLowerCase()}…`;
 
   const card = (label, value, note, color, attr = "") => `<button class="kpi" ${attr} style="border-top-color:${color}"><div class="lbl">${label}</div><div class="val">${value}</div><div class="note muted">${note}</div></button>`;
@@ -2266,7 +2266,7 @@ $("depXlsx").onclick = () => {
   out.push(line("Grand Total", "", grand));
   const bls = depInRange().map((x) => ({ "HBL No": x.bl, "HBL Date": new Date(x.date + "T00:00"), Shipper: x.shipper, Consignee: x.consignee, "PLR Agent": x.plrAgent,
     PLR: x.plr, POL: x.pol, POD: x.pod, FPD: x.fpd, "Job No": x.job, Cargo: x.cargo, "Number of Containers": x.tanks.length, "Container Nos": x.tanks.join(",") }));
-  writeXlsx(`SAR_Tank_Deployment_${todayIso()}.xlsx`, [[`By ${depLabel[k0]}`, out, [40, 34, ...cols.map((c) => (c.week ? 15 : 10)), 11]],
+  writeXlsx(`SAR_Tank_Deployment_${todayIso()}.xlsx`, [[dep.group === "agent" ? "By Shipper" : "By PLR Agent", out, [40, 34, ...cols.map((c) => (c.week ? 15 : 10)), 11]],
     ["BLs", bls, [20, 12, 36, 36, 32, 16, 16, 16, 16, 20, 12, 10, 60], 1]]);
 };
 

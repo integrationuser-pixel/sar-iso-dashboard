@@ -532,6 +532,14 @@
     <div class="seg" id="currency" aria-label="Currency"><button data-c="USD">USD</button><button data-c="INR">INR</button></div>
     <label class="f hidden" id="rateWrap">1 USD = ₹ <input type="number" id="rate" min="1" step="0.01" style="width:96px"></label>
   </div>
+  <div class="page-head hidden" id="finHead">
+    <div class="ph-text"><h2 id="finTitle">Accounts Receivable</h2><p class="sub" id="finSub">Loading…</p></div>
+    <div class="ph-controls">
+      <div class="view-toggle" id="finTabs" role="group" aria-label="Finance report">
+        <button data-side="ar">Accounts Receivable</button><button data-side="ap">Accounts Payable</button>
+      </div>
+    </div>
+  </div>
   <div class="page-head hidden" id="mrHead">
     <div class="ph-text"><h2 id="mrTitle">Total Inventory</h2><p class="sub" id="mrSub">Loading…</p></div>
     <div class="ph-controls">
@@ -616,7 +624,7 @@
             <div class="ms-list" id="chargeList"></div>
           </div>
         </span>
-        <button class="btn" id="pivotExpand">Show weeks</button> <button class="btn" id="pivotCollapse">Months only</button>
+        <button class="btn" id="pivotWeeks">Show weeks</button>
       </span>
       <input class="search" id="detailSearch" placeholder="Search…">
       <span class="foot" id="detailCount"></span>
@@ -689,7 +697,7 @@
       <div><h2 id="depTitle">Tanks Deployed by Shipper</h2><p class="sub" style="margin-bottom:0">Number of tanks on export BLs by HBL month — + on a month shows its weeks; click a number for the BLs</p></div>
       <div class="tools" style="margin:0">
         <input class="search" id="depSearch" placeholder="Search shipper or agent…">
-        <button class="btn" id="depWeeks">Show weeks</button><button class="btn" id="depMonths">Months only</button>
+        <button class="btn" id="depWeeksToggle">Show weeks</button>
         <button class="btn" id="depToggleAll">Expand all</button>
         <button class="btn" id="depXlsx">Export to Excel</button>
       </div>
@@ -700,14 +708,6 @@
 
 <main id="finPage" class="hidden">
   <div class="alert hidden" id="finErr" role="alert"></div>
-  <div class="card viewbar">
-    <div><h2 id="finTitle">Accounts Receivable</h2><p class="sub" id="finSub">Loading…</p></div>
-    <div class="mr-controls">
-      <div class="view-toggle" id="finTabs" role="group" aria-label="Finance report">
-        <button data-side="ar">Accounts Receivable</button><button data-side="ap">Accounts Payable</button>
-      </div>
-    </div>
-  </div>
   <div class="kpis fin-kpis" id="finKpis"></div>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
@@ -1084,6 +1084,7 @@ function route(next) {
   $("invPage").classList.toggle("hidden", page !== "inv");
   $("invHead").classList.toggle("hidden", page !== "inv");
   $("mrHead").classList.toggle("hidden", page !== "mr");
+  $("finHead").classList.toggle("hidden", page !== "fin");
   $("depHead").classList.toggle("hidden", page !== "dep");
   $("depPage").classList.toggle("hidden", page !== "dep");
   $("finPage").classList.toggle("hidden", page !== "fin");
@@ -1503,6 +1504,7 @@ function renderPivot() {
   // stack the footer rows when it has more than one (each stays frozen above the one below)
   const fr = [...$("detailTable").tFoot.rows]; let off = 0;
   for (let i = fr.length - 1; i >= 0; i--) { for (const td of fr[i].cells) td.style.bottom = `${off}px`; off += fr[i].getBoundingClientRect().height; }
+  $("pivotWeeks").textContent = months.length && months.every(({ m }) => state.monthsOpen.has(m)) ? "Months only" : "Show weeks";
 }
 
 function billingLines() {
@@ -1571,11 +1573,13 @@ function pivotClick(e) {
   }
   return true;
 }
-$("pivotExpand").onclick = () => {   // open every month into weeks
-  for (const l of billingLines()) state.monthsOpen.add(l.date.slice(0, 7));
+// one button: open every month into weeks, or back to months only once all are open
+const billingMonths = () => [...new Set(billingLines().map((l) => l.date.slice(0, 7)))];
+$("pivotWeeks").onclick = () => {
+  const ms = billingMonths();
+  if (ms.length && ms.every((m) => state.monthsOpen.has(m))) state.monthsOpen.clear(); else for (const m of ms) state.monthsOpen.add(m);
   renderPivot();
 };
-$("pivotCollapse").onclick = () => { state.monthsOpen.clear(); renderPivot(); };
 
 // ============================================================ charge breakdown pop-up (Shipper / Party / POL / POD)
 const sum = { charge: null, rows: [], q: "" };
@@ -2219,14 +2223,19 @@ function renderDep() {
   const hr = $("depTable").tHead.rows;
   if (hr[1]) { const h = hr[0].getBoundingClientRect().height; for (const th of hr[1].cells) th.style.top = `${h}px`; }
   $("depToggleAll").textContent = rows.length && rows.every((r) => dep.open.has(r.name)) ? "Collapse all" : "Expand all";
+  { const ms = depWeekMonths(); $("depWeeksToggle").textContent = ms.length && ms.every((m) => dep.monthsOpen.has(m)) ? "Months only" : "Show weeks"; }
 }
 $("depToggleAll").onclick = () => {
   const rows = depRows();
   if (rows.length && rows.every((r) => dep.open.has(r.name))) dep.open.clear(); else for (const r of rows) dep.open.add(r.name);
   renderDep();
 };
-$("depWeeks").onclick = () => { for (const m of monthsBetween(dep.from, dep.to)) dep.monthsOpen.add(m); renderDep(); };
-$("depMonths").onclick = () => { dep.monthsOpen.clear(); renderDep(); };
+const depWeekMonths = () => depCols().filter((c) => c.monthTotal && c.weeks.length).map((c) => c.m);
+$("depWeeksToggle").onclick = () => {
+  const ms = depWeekMonths();
+  if (ms.length && ms.every((m) => dep.monthsOpen.has(m))) dep.monthsOpen.clear(); else for (const m of ms) dep.monthsOpen.add(m);
+  renderDep();
+};
 $("depTable").onclick = (e) => {
   const mt = e.target.closest("[data-month]");
   if (mt) { const m = mt.dataset.month; dep.monthsOpen.has(m) ? dep.monthsOpen.delete(m) : dep.monthsOpen.add(m); return renderDep(); }
@@ -2344,6 +2353,7 @@ function renderFin() {
   const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   const synced = fin.data.lastSync ? new Date(fin.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
   $("finSub").textContent = `Open invoices of SAR Global PTE Ltd · ageing as on ${today} · invoices up to ${fin.data.dataTo ? shortDate(fin.data.dataTo) : "—"} · synced ${synced}`;
+  $("finSub").title = $("finSub").textContent;
   $("finFoot").innerHTML = `Ageing columns = open invoices (invoice amount less what has been knocked off against them), aged by days past the due date: Not Due up to 30 days, then over 30, 60 and 90 days.
     <b>On Account</b> = ${fin.side === "ap" ? "payments made" : "receipts and credit notes received"} but not yet knocked off against an invoice — from SARFD, or entered by an admin (marked ✎) where SARFD doesn't have them.
     <b>Net Outstanding</b> = Grand Total less On Account: the real ${fin.side === "ap" ? "amount payable" : "amount receivable"}.${fin.side === "ap" ? " Payables are shown as negative amounts, as in Syscon." : ""}`;

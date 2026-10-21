@@ -1236,16 +1236,16 @@ const g = () => granularity(state.view, state.from, state.to);
 function render() {
   renderFilters();
   renderChargeFilter();
-  const lines = inPeriod(), k = kpis(lines);
+  const lines = inPeriod(), k = kpis(lines), kAll = kpis(inPeriodAll());   // Total Revenue card always covers every charge
 
   const cards = [["Total Revenue", null], ...MAIN_CATS.map((c) => [`${c} Revenue`, c]),
                  ...Object.keys(k.byCat).filter((c) => !MAIN_CATS.includes(c)).map((c) => [catLabel(c), c])];
   $("kpis").innerHTML = cards.map(([label, cat]) => {
-    const v = cat ? k.byCat[cat] : k.total;
+    const v = cat ? k.byCat[cat] : kAll.total;
     return `<button class="kpi" data-cat="${esc(cat || "")}" title="${esc(money(v))}" style="border-top-color:${cat ? catColor(cat) : "#1E3A8A"}">
       <div class="lbl">${esc(label)}</div>
       <div class="val">${moneyCr(v)}</div>
-      ${cat ? "" : `<div class="note muted">${allChargesOn() ? "" : `${allCharges().filter((c) => state.charges.has(c)).length} of ${allCharges().length} charges · `}Gross ${moneyCr(k.gross)} · CN ${moneyCr(k.credit)}</div>`}</button>`;
+      ${cat ? "" : `<div class="note muted">${allChargesOn() ? "" : `Selected charges ${moneyCr(k.total)}<br>Other charges ${moneyCr(kAll.total - k.total)}<br>`}Gross ${moneyCr(kAll.gross)} · CN ${moneyCr(kAll.credit)}</div>`}</button>`;
   }).join("");
 
   // Only the visible view is drawn (Chart.js can't size a hidden canvas).
@@ -1273,7 +1273,7 @@ $("viewToggle").onclick = (e) => {
   const m = e.target.closest("button")?.dataset.mode;
   if (m && m !== state.mode) { state.mode = m; store.set("sar.salesMode", m); render(); }
 };
-$("kpis").onclick = (e) => { const b = e.target.closest(".kpi"); if (b) { const c = b.dataset.cat || undefined; openDrill({ title: c ? (MAIN_CATS.includes(c) ? `${c} Revenue` : catLabel(c)) : "Total Revenue", category: c }); } };
+$("kpis").onclick = (e) => { const b = e.target.closest(".kpi"); if (b) { const c = b.dataset.cat || undefined; openDrill(c ? { title: MAIN_CATS.includes(c) ? `${c} Revenue` : catLabel(c), category: c } : { title: "Total Revenue — all charges", allCharges: true }); } };
 
 Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
 Chart.defaults.color = "#64748b";

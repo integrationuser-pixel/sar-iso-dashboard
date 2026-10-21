@@ -59,6 +59,10 @@
             background: var(--card); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .topbar h1 { margin: 0; font-size: 21px; font-weight: 700; }
   .topbar .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .page-head { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .page-head.hidden { display: none; }
+  .page-head h2 { margin: 0; font-size: 17px; font-weight: 700; }
+  .page-head .sub { margin: 2px 0 0; font-size: 12px; color: var(--ink-soft); }
   .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .select, .f select, .f input { height: 38px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper);
             font-size: 13px; font-weight: 600; color: #000; }
@@ -446,7 +450,8 @@
     .menu-btn { display: grid; }
     .topbar { position: static; padding: 12px 16px; gap: 10px; }
     .topbar .right { order: 2; margin-left: auto; }
-    .topbar .filters, .topbar h1 { order: 3; width: 100%; }
+    .topbar .filters, .topbar h1, .topbar .page-head { order: 3; width: 100%; }
+    .page-head { flex-wrap: wrap; }
     .topbar h1:not(.hidden) { order: 1; width: auto; font-size: 17px; }
     main { padding: 16px 16px 40px; }
   }
@@ -523,6 +528,10 @@
     <span class="drf-divider"></span>
     <div class="seg" id="currency" aria-label="Currency"><button data-c="USD">USD</button><button data-c="INR">INR</button></div>
     <label class="f hidden" id="rateWrap">1 USD = ₹ <input type="number" id="rate" min="1" step="0.01" style="width:96px"></label>
+  </div>
+  <div class="page-head hidden" id="invHead">
+    <div class="ph-text"><h2>Current Tank Inventory Status</h2><p class="sub" id="invSub">Loading…</p></div>
+    <label class="f">Country <select id="invCountry"><option value="">All countries</option></select></label>
   </div>
   <div class="right">
     <button class="btn-primary" id="refreshBtn" title="Reload data">
@@ -643,12 +652,6 @@
 
 <main id="invPage" class="hidden">
   <div class="alert hidden" id="invErr" role="alert"></div>
-  <div class="card viewbar">
-    <div><h2>Current Tank Inventory Status</h2><p class="sub" id="invSub">Loading…</p></div>
-    <div class="mr-controls">
-      <label class="f">Country <select id="invCountry"><option value="">All countries</option></select></label>
-    </div>
-  </div>
   <div class="kpis inv-kpis" id="invKpis"></div>
   <section class="card panel">
     <div class="tools" style="justify-content:space-between">
@@ -1077,6 +1080,7 @@ function route(next) {
   $("usagePage").classList.toggle("hidden", page !== "usage");
   $("mrPage").classList.toggle("hidden", page !== "mr");
   $("invPage").classList.toggle("hidden", page !== "inv");
+  $("invHead").classList.toggle("hidden", page !== "inv");
   $("depPage").classList.toggle("hidden", page !== "dep");
   $("finPage").classList.toggle("hidden", page !== "fin");
   $("refreshBtn").classList.toggle("hidden", !["sales", "mr", "inv", "dep", "fin"].includes(page));

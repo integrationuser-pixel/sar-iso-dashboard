@@ -1370,7 +1370,7 @@ function renderMix(byCat) {
   });
   $("mixLegend").innerHTML = data.length ? data.map((d) =>
     `<button data-cat="${esc(d.name)}"><span class="dot" style="background:${catColor(d.name)}"></span>${esc(catLabel(d.name))} · ${moneyShort(d.value)} (${(d.value / total * 100).toFixed(0)}%)</button>`).join("")
-    : `<span class="foot">${state.charges.size ? "No revenue in this period" : "No filters applied"}</span>`;
+    : `<span class="foot">Filters Not Applied/Data unavailable</span>`;
 }
 $("mixLegend").onclick = (e) => { const c = e.target.closest("button")?.dataset.cat; if (c) openDrill({ title: MAIN_CATS.includes(c) ? `${c} Revenue` : catLabel(c), category: c }); };
 
@@ -1428,7 +1428,7 @@ function renderTable() {
   $("detailTable").innerHTML =
     `<thead><tr><th>${dim}</th>${buckets.map((b) => `<th>${bucketLabel(b, gr)}</th>`).join("")}<th>Total</th></tr></thead>
      <tbody>${shown.map((r) => `<tr${r.others || r.name === NO_LANE ? ' class="recon"' : ""}><td class="name" title="${esc(r.name)}">${esc(r.name)}</td>${buckets.map((b) => cell(r.cells[b], rowName(r), b)).join("")}${cell(r.total, rowName(r), "")}</tr>`).join("")
-       || `<tr><td colspan="${2 + buckets.length}" style="text-align:center;padding:24px;color:#94a3b8">${state.charges.size ? `No ${dim.toLowerCase()}s in this period` : "No filters applied"}</td></tr>`}</tbody>
+       || `<tr><td colspan="${2 + buckets.length}" style="text-align:center;padding:24px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>
      <tfoot><tr><td>TOTAL${q ? "" : " = Total Revenue"}</td>${buckets.map((b) => cell(totals.cells[b], "", b)).join("")}${cell(totals.total, "", "")}</tr></tfoot>`;
   $("detailMore").classList.toggle("hidden", main.length <= 15);
   $("detailMore").textContent = state.detailAll ? "Show top 15" : `Show all ${main.length}`;
@@ -1535,7 +1535,7 @@ function renderPivot() {
   }
 
   $("detailTable").className = "pivot";
-  $("detailTable").innerHTML = `<thead><tr>${head1}</tr>${head2 ? `<tr>${head2}</tr>` : ""}</thead><tbody>${body || `<tr><td colspan="${1 + pivotCols.length}" style="text-align:center;padding:24px;color:#94a3b8">${state.charges.size ? "No billing in this period" : "No filters applied"}</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
+  $("detailTable").innerHTML = `<thead><tr>${head1}</tr>${head2 ? `<tr>${head2}</tr>` : ""}</thead><tbody>${body || `<tr><td colspan="${1 + pivotCols.length}" style="text-align:center;padding:24px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody><tfoot>${foot}</tfoot>`;
   const rows = $("detailTable").tHead.rows;
   if (rows[1]) { const h = rows[0].getBoundingClientRect().height; for (const th of rows[1].cells) th.style.top = `${h}px`; }
   // stack the footer rows when it has more than one (each stays frozen above the one below)
@@ -1811,7 +1811,7 @@ function renderInventory() {
   });
   $("mrPrincipalLegend").innerHTML = principals.map((p, i) =>
     `<button data-p="${esc(p[0])}"><span class="dot" style="background:${pColor(i)}"></span>${esc(p[0])} · ${n0(p[1])} (${(p[1] / total * 100).toFixed(0)}%)</button>`).join("")
-    || '<span class="foot">No tanks</span>';
+    || '<span class="foot">Filters Not Applied/Data unavailable</span>';
 }
 $("mrViewToggle").onclick = (e) => {
   const m = e.target.closest("button[data-mode]")?.dataset.mode;
@@ -1849,7 +1849,7 @@ function renderMrPivot(tanks) {
     }
   }
   $("mrPivot").innerHTML = `<thead><tr><th>Principal / Activity</th><th>Tanks</th><th>% of Total</th></tr></thead><tbody>${body
-    || '<tr><td colspan="3" style="text-align:center;padding:30px;color:#94a3b8">No tanks</td></tr>'}</tbody>
+    || '<tr><td colspan="3" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
     <tfoot><tr><td>GRAND TOTAL</td><td>${num(total, 'data-all="1"')}</td><td>${total ? "100%" : "–"}</td></tr></tfoot>`;
   $("mrToggleAll").textContent = rows.length && rows.every((r) => mr.open.has(r.name)) ? "Collapse all" : "Expand all";
 }
@@ -1930,7 +1930,7 @@ function renderDepot() {
   const allDepots = [...new Set(rows.map((r) => r.depot))];
   $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) ? "Collapse all" : "Expand all";
   $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th>Principal</th><th class="rt">Grand Total</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
-    <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
+    <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
     <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td><td>${n0(grand.total)}</td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}</tr></tfoot>`;
 }
 $("mrDepotSearch").oninput = (e) => { mr.depotQ = e.target.value; renderDepot(); };   // matching depots open while searching
@@ -2113,7 +2113,7 @@ function renderInv() {
       <tr><th class="txt grp" colspan="5" style="text-align:left">Depot</th><th class="st"></th><th class="av" colspan="4">AV — days</th><th class="st" colspan="3"></th><th class="gt wrap" rowspan="1"></th></tr>
       <tr><th class="txt wrap">Depot Country</th><th class="txt dep wrap">Depot Name</th><th class="txt wrap">Depot Port</th><th class="txt wrap">Depot Agent</th><th class="txt wrap">Depot Billing Party</th>
         ${INV_COLS.map(([k, l]) => `<th class="${k.startsWith("av") ? "av" : "st"}">${l}</th>`).join("")}<th class="gt wrap">Grand Total</th></tr></thead>
-    <tbody>${body || '<tr><td colspan="14" style="text-align:center;padding:30px;color:#94a3b8">No tanks at a depot</td></tr>'}</tbody>
+    <tbody>${body || '<tr><td colspan="14" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
     <tfoot><tr><td class="txt">Grand Total</td><td class="txt dep"></td><td></td><td></td><td></td>${INV_COLS.map(([k]) => `<td class="${ageCls(k)}">${n0(grand[k])}</td>`).join("")}<td class="gt">${n0(grand.total)}</td></tr></tfoot>`;
   // freeze the two header rows and the Depot Name column (left offset = width of the Country column)
   const tbl = $("invTable"), hr = tbl.tHead.rows, h = hr[0].getBoundingClientRect().height;
@@ -2265,7 +2265,7 @@ function renderDep() {
     if (open) for (const k of r.kids) body += `<tr class="lv1"><td class="txt"></td><td class="txt l1" title="${esc(k.name)}">${esc(k.name)}</td>${cells(k, `${a0} data-b="${esc(k.name)}"`)}</tr>`;
   }
   $("depTable").innerHTML = `<thead><tr>${head1}</tr></thead>
-    <tbody>${body || `<tr><td colspan="${3 + cols.length}" style="text-align:center;padding:30px;color:#94a3b8">No data available for this period</td></tr>`}</tbody>
+    <tbody>${body || `<tr><td colspan="${3 + cols.length}" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>
     <tfoot><tr><td class="txt">Grand Total</td><td class="txt">${n0(rows.length)} ${depLabel[k0].toLowerCase()}s</td><td class="gt">${n0(grand.total)}</td>${cols.map((c) => `<td class="${weekly ? "" : "mtot"}">${n0(grand.months[c.key] || 0)}</td>`).join("")}</tr></tfoot>`;
   $("depToggleAll").textContent = rows.length && rows.every((r) => dep.open.has(r.name)) ? "Collapse all" : "Expand all";
 }

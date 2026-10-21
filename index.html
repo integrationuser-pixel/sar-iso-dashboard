@@ -532,6 +532,16 @@
     <div class="seg" id="currency" aria-label="Currency"><button data-c="USD">USD</button><button data-c="INR">INR</button></div>
     <label class="f hidden" id="rateWrap">1 USD = ₹ <input type="number" id="rate" min="1" step="0.01" style="width:96px"></label>
   </div>
+  <div class="page-head hidden" id="mrHead">
+    <div class="ph-text"><h2 id="mrTitle">Total Inventory</h2><p class="sub" id="mrSub">Loading…</p></div>
+    <div class="ph-controls">
+      <label class="f">Principal <select id="mrPrincipal"><option value="">All principals</option></select></label>
+      <div class="view-toggle" id="mrTabs" role="group" aria-label="M&amp;R report">
+        <button data-tab="inventory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Total Inventory</button>
+        <button data-tab="depot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12M7 21v-7h10v7"/></svg>Depot Report</button>
+      </div>
+    </div>
+  </div>
   <div class="page-head hidden" id="invHead">
     <div class="ph-text"><h2>Current Tank Inventory Status</h2><p class="sub" id="invSub">Loading…</p></div>
     <label class="f">Country <select id="invCountry"><option value="">All countries</option></select></label>
@@ -620,17 +630,6 @@
 
 <main id="mrPage" class="hidden">
   <div class="alert hidden" id="mrErr" role="alert"></div>
-  <div class="card viewbar">
-    <div><h2 id="mrTitle">Total Inventory</h2><p class="sub" id="mrSub">Loading…</p></div>
-    <div class="mr-controls">
-      <label class="f">Principal <select id="mrPrincipal"><option value="">All principals</option></select></label>
-      <div class="view-toggle" id="mrTabs" role="group" aria-label="M&amp;R report">
-        <button data-tab="inventory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Total Inventory</button>
-        <button data-tab="depot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12M7 21v-7h10v7"/></svg>Depot Report</button>
-      </div>
-    </div>
-  </div>
-
   <div id="mrInventory" class="mr-tab">
     <div class="kpis mr-kpis" id="mrKpis"></div>
     <div class="row">
@@ -1084,6 +1083,7 @@ function route(next) {
   $("mrPage").classList.toggle("hidden", page !== "mr");
   $("invPage").classList.toggle("hidden", page !== "inv");
   $("invHead").classList.toggle("hidden", page !== "inv");
+  $("mrHead").classList.toggle("hidden", page !== "mr");
   $("depHead").classList.toggle("hidden", page !== "dep");
   $("depPage").classList.toggle("hidden", page !== "dep");
   $("finPage").classList.toggle("hidden", page !== "fin");
@@ -1717,6 +1717,7 @@ function renderMr() {
   $("mrTitle").textContent = mr.tab === "depot" ? "Depot Report" : "Total Inventory";
   const synced = mr.data.lastSync ? new Date(mr.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
   $("mrSub").textContent = `Latest movement per tank · movements up to ${mr.data.dataTo ? shortDate(mr.data.dataTo) : "—"} · synced ${synced}`;
+  $("mrSub").title = $("mrSub").textContent;
   if (mr.tab === "depot") renderDepot(); else renderInventory();
 }
 

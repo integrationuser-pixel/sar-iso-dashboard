@@ -131,11 +131,16 @@ async function aggregate(collection, pipeline = []) {
 // "1. Billing details" sheet (checked line by line, Feb–Aug 2026 match to the cent):
 //   - sales vouchers only: Principal Sales, Sub Lease, Sundry, M&R Sales invoices and Principal Credit Notes
 //     (Debit Note Agency, purchase vouchers and proformas are not revenue)
-//   - company SAR Global PTE Ltd only (the older SAR LOGISOLUTIONS PTE. LTD. invoices are not in the report)
+//   - company SAR Global PTE Ltd, plus the old company's (SAR LOGISOLUTIONS PTE. LTD.) January 2026 invoices
 //   - proforma invoices (invoice number starting "PRO") left out even when filed under a sales voucher
 //   - invoices carrying a deletedNo are kept: they are still posted in the ledger and in the report
 const SALES_VOUCHERS = { PSI: "Invoice", SLI: "Invoice", SDI: "Invoice", MRI: "Invoice", CN: "Credit Note" };
 const SALES_COMPANIES = ["SAR Global PTE Ltd"];
+// SAR Global was SAR LOGISOLUTIONS PTE. LTD. until the rename in Feb 2026; its January 2026 invoices and BLs
+// are shown too, so Jan-26 has figures. Earlier months of the old company stay out.
+const OLD_COMPANY = "SAR LOGISOLUTIONS PTE. LTD.";
+const OLD_COMPANY_MONTHS = ["2026-01"];
+const keepCompany = (company, date) => SALES_COMPANIES.includes(company) || (company === OLD_COMPANY && OLD_COMPANY_MONTHS.includes(String(date).slice(0, 7)));
 const SUNDRY = new Set(["SDI"]);
 const CATEGORIES = ["Lease", "Detention", "EXIM", "M&R", "Other"];
 const s = (v) => (typeof v === "string" ? v.trim() : "");
@@ -144,14 +149,14 @@ const normCharge = (v) => s(v).toUpperCase();
 async function buildSales(db, mappings, lastSync) {
   const catOf = new Map(mappings.map((m) => [normCharge(m.chargeName), CATEGORIES.includes(m.revenueCategory) ? m.revenueCategory : "Other"]));
   const rows = await db.collection("tblInvoice").find(
-    { recordType: "C", voucherCode: { $in: Object.keys(SALES_VOUCHERS) }, companyName: { $in: SALES_COMPANIES }, invoiceNo: { $not: /^PRO/i } },
-    { projection: { _id: 0, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, lineNo: 1, chargeName: 1,
+    { recordType: "C", voucherCode: { $in: Object.keys(SALES_VOUCHERS) }, companyName: { $in: [...SALES_COMPANIES, OLD_COMPANY] }, invoiceNo: { $not: /^PRO/i } },
+    { projection: { _id: 0, companyName: 1, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, lineNo: 1, chargeName: 1,
         chargeTotalAmountHc: 1, billingPartyName: 1, shipperName: 1, polName: 1, podName: 1, blNo: 1, jobNo: 1 } },
   ).toArray();
 
   const lines = [];
   for (const r of rows) {
-    if (!r.invoiceDate) continue;
+    if (!r.invoiceDate || !keepCompany(r.companyName, new Date(r.invoiceDate).toISOString())) continue;
     const docType = SALES_VOUCHERS[r.voucherCode];
     const pol = s(r.polName), pod = s(r.podName), blNo = s(r.blNo);
     const charge = normCharge(r.chargeName) || "(NO CHARGE NAME)";
@@ -179,7 +184,7 @@ async function buildSales(db, mappings, lastSync) {
 // The Atlas cluster downloads slowly (~100 KB/s), so the built dataset is kept gzipped in
 // `dashboardCache` and rebuilt only after a new tblInvoice sync or a charge-mapping change.
 const TTL_MS = 2 * 60 * 1000;
-const SNAPSHOT_ID = "sales-html-v3";
+const SNAPSHOT_ID = "sales-html-v4";
 
 async function salesDataset() {
   if (g._sarSales && Date.now() - g._sarSales.at < TTL_MS) return g._sarSales.data;
@@ -376,21 +381,22 @@ async function mrDataset() {
 
 // ---------------------------------------------------------------- Tank Deployment dataset
 // One row per export BL (tblBL, header rows "H") with its tanks (detail rows "D", container_containerNo).
-// Same rules as the Syscon "BL Register - Dump" pivot it replaces: SAR Global PTE Ltd BLs, month from the
+// Same rules as the Syscon "BL Register - Dump" pivot it replaces: SAR Global PTE Ltd BLs (plus the old company's
+// January 2026 BLs), month from the
 // HBL date, tanks = the BL's live container list. Checked BL by BL against the dump (Feb–Sep 2026).
 
 const DEPLOY_COMPANIES = ["SAR Global PTE Ltd"];
-const DEPLOY_SNAPSHOT_ID = "deploy-v1";
+const DEPLOY_SNAPSHOT_ID = "deploy-v2";
 const unEntity = (v) => s(v).replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim();
 
 async function buildDeploy(db, lastSync) {
   const bl = db.collection("tblBL");
   const [heads, tanks] = await Promise.all([
-    bl.find({ recordType: "H", companyName: { $in: DEPLOY_COMPANIES }, deletedNo: { $exists: false } },
-      { projection: { _id: 0, blId: 1, hblNo: 1, blNo: 1, hblDate: 1, blDate: 1, shipperName: 1, consigneeName: 1, plrAgentName: 1, polAgentName: 1,
+    bl.find({ recordType: "H", companyName: { $in: [...DEPLOY_COMPANIES, OLD_COMPANY] }, deletedNo: { $exists: false } },
+      { projection: { _id: 0, companyName: 1, blId: 1, hblNo: 1, blNo: 1, hblDate: 1, blDate: 1, shipperName: 1, consigneeName: 1, plrAgentName: 1, polAgentName: 1,
                       podAgentName: 1, plrName: 1, polName: 1, podName: 1, fpdName: 1, exportJobNo: 1, cargoTypeName: 1, commodity: 1 } }).toArray(),
     bl.aggregate([
-      { $match: { recordType: "D", companyName: { $in: DEPLOY_COMPANIES }, container_containerNo: { $nin: [null, ""] }, container_deletedNo: { $exists: false } } },
+      { $match: { recordType: "D", companyName: { $in: [...DEPLOY_COMPANIES, OLD_COMPANY] }, container_containerNo: { $nin: [null, ""] }, container_deletedNo: { $exists: false } } },
       { $group: { _id: "$blId", tanks: { $addToSet: "$container_containerNo" } } },
     ]).toArray(),
   ]);
@@ -399,6 +405,7 @@ async function buildDeploy(db, lastSync) {
   const bls = [];
   for (const h of heads) {
     const date = day(h.hblDate || h.blDate); if (!date) continue;
+    if (!DEPLOY_COMPANIES.includes(h.companyName) && !(h.companyName === OLD_COMPANY && OLD_COMPANY_MONTHS.includes(date.slice(0, 7)))) continue;
     const list = byBl.get(h.blId) || [];
     bls.push({ bl: s(h.hblNo || h.blNo), date, shipper: unEntity(h.shipperName) || "(No shipper)", consignee: unEntity(h.consigneeName),
                plrAgent: unEntity(h.plrAgentName) || "(No PLR agent)", polAgent: unEntity(h.polAgentName), podAgent: unEntity(h.podAgentName),
@@ -443,17 +450,18 @@ async function deployDataset() {
 //                 admins can enter the figure per party until SARFD carries all receipts and payments
 // Receipts and payments in SARFD lag the invoices, so recent settlements may be missing.
 
-const FIN_COMPANIES = ["SAR Global PTE Ltd"];
+const FIN_COMPANIES = ["SAR Global PTE Ltd", OLD_COMPANY];   // each item is tagged co: "global" | "old"; the page filters by company
+const finCo = (name) => (name === OLD_COMPANY ? "old" : "global");
 const AR_VOUCHERS = ["PSI", "SLI", "SDI", "MRI"];
 const AP_VOUCHERS = ["PI", "PICI", "GP", "SDPI"];
 const SETTLEMENTS = ["BANK RECEIPT", "BANK PAYMENT", "JOURNAL VOUCHER", "CONTRA VOUCHER", "Principle Credit Note"];
-const FIN_SNAPSHOT_ID = "finance-v3";
+const FIN_SNAPSHOT_ID = "finance-v4";
 
 async function buildFinance(db, lastSync) {
   const [heads, allocs, onAcc] = await Promise.all([
     db.collection("tblInvoice").find(
       { recordType: "H", companyName: { $in: FIN_COMPANIES }, voucherCode: { $in: [...AR_VOUCHERS, ...AP_VOUCHERS] }, invoiceNo: { $not: /^PRO/i } },
-      { projection: { _id: 0, invoiceNo: 1, invoiceDate: 1, dueDate: 1, creditPeriod: 1, voucherCode: 1, billingPartyName: 1, vendorInvoiceNo: 1,
+      { projection: { _id: 0, companyName: 1, invoiceNo: 1, invoiceDate: 1, dueDate: 1, creditPeriod: 1, voucherCode: 1, billingPartyName: 1, vendorInvoiceNo: 1,
                       vendorInvoiceDate: 1, totalInvoiceAmount: 1, invoiceAmount: 1, currencyCode: 1, blNo: 1, jobNo: 1 } }).toArray(),
     db.collection("tblVoucher").find(
       { recordType: "D", voucherTypeName: { $in: SETTLEMENTS }, $or: [{ deletedNo: { $exists: false } }, { deletedNo: 0 }],
@@ -463,7 +471,7 @@ async function buildFinance(db, lastSync) {
     db.collection("tblVoucher").aggregate([
       { $match: { companyName: { $in: FIN_COMPANIES }, voucherTypeName: { $in: ["BANK RECEIPT", "BANK PAYMENT", "Principle Credit Note"] },
                   recordType: { $in: ["H", "D"] }, $or: [{ deletedNo: { $exists: false } }, { deletedNo: 0 }, { voucherTypeName: "Principle Credit Note" }] } },
-      { $group: { _id: "$voucherNo", type: { $first: "$voucherTypeName" }, party: { $first: "$partyName" }, date: { $first: "$voucherDate" },
+      { $group: { _id: "$voucherNo", company: { $first: "$companyName" }, type: { $first: "$voucherTypeName" }, party: { $first: "$partyName" }, date: { $first: "$voucherDate" },
                   ref: { $first: "$referenceNo" }, narration: { $first: "$narration" },
                   amount: { $max: { $cond: [{ $eq: ["$recordType", "H"] }, "$voucherAmount", 0] } },
                   allocated: { $sum: { $cond: [{ $and: [{ $eq: ["$recordType", "D"] }, { $gt: [{ $strLenCP: { $ifNull: ["$detailInvoiceNo", ""] } }, 0] }] },
@@ -486,7 +494,7 @@ async function buildFinance(db, lastSync) {
     const ar = AR_VOUCHERS.includes(h.voucherCode);
     const amount = Math.round((h.totalInvoiceAmount ?? h.invoiceAmount ?? 0) * 100) / 100;
     const due = day(h.dueDate) || addDaysIso(date, Number(h.creditPeriod) || 0);
-    const doc = { side: ar ? "ar" : "ap", party: s(h.billingPartyName) || "(No party)", invoiceNo: s(h.invoiceNo), ref: ar ? s(h.invoiceNo) : s(h.vendorInvoiceNo) || s(h.invoiceNo),
+    const doc = { co: finCo(h.companyName), side: ar ? "ar" : "ap", party: s(h.billingPartyName) || "(No party)", invoiceNo: s(h.invoiceNo), ref: ar ? s(h.invoiceNo) : s(h.vendorInvoiceNo) || s(h.invoiceNo),
                   date, due, creditPeriod: Number(h.creditPeriod) || 0, voucher: h.voucherCode, currency: s(h.currencyCode) || "USD", amount, adjusted: 0,
                   bl: s(h.blNo), job: s(h.jobNo) };
     if (ar) { doc.adjusted = Math.min(amount, settled.get(key(h.invoiceNo)) || 0); docs.push(doc); }
@@ -508,17 +516,17 @@ async function buildFinance(db, lastSync) {
   }
   open.sort((a, b) => a.party.localeCompare(b.party) || a.date.localeCompare(b.date));
   // on account per party: receipts and credit notes reduce receivables; payments reduce payables
-  const onAccount = { ar: {}, ap: {} }, onAccountDocs = [];
+  const onAccount = { ar: {}, ap: {} }, onAccountOld = { ar: {}, ap: {} }, onAccountDocs = [];   // SAR Global / old company
   for (const v of onAcc) {
     const left = Math.round(((v.amount || 0) - (v.allocated || 0)) * 100) / 100;
     if (left < 0.01 || !s(v.party)) continue;
-    const side = v.type === "BANK PAYMENT" ? "ap" : "ar";
-    onAccount[side][s(v.party)] = Math.round(((onAccount[side][s(v.party)] || 0) + left) * 100) / 100;
-    onAccountDocs.push({ side, party: s(v.party), voucherNo: s(v._id), type: s(v.type), date: day(v.date), ref: s(v.ref), narration: s(v.narration).slice(0, 160),
+    const side = v.type === "BANK PAYMENT" ? "ap" : "ar", co = finCo(v.company), bucket = co === "old" ? onAccountOld : onAccount;
+    bucket[side][s(v.party)] = Math.round(((bucket[side][s(v.party)] || 0) + left) * 100) / 100;
+    onAccountDocs.push({ co, side, party: s(v.party), voucherNo: s(v._id), type: s(v.type), date: day(v.date), ref: s(v.ref), narration: s(v.narration).slice(0, 160),
                          amount: Math.round((v.amount || 0) * 100) / 100, allocated: Math.round((v.allocated || 0) * 100) / 100, onAccount: left });
   }
   const dataTo = heads.reduce((mx, h) => { const d = day(h.invoiceDate); return d && d > mx ? d : mx; }, "");
-  return { docs: open, onAccount, onAccountDocs, lastSync, dataTo: dataTo || null, generatedAt: new Date().toISOString() };
+  return { docs: open, onAccount, onAccountOld, onAccountDocs, lastSync, dataTo: dataTo || null, generatedAt: new Date().toISOString() };
 }
 
 async function financeDataset() {

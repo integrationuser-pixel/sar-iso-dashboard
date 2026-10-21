@@ -561,6 +561,7 @@
   <div class="page-head hidden" id="finHead">
     <div class="ph-text"><h2 id="finTitle">Accounts Receivable</h2><p class="sub" id="finSub">Loading…</p></div>
     <div class="ph-controls">
+      <label class="f">Company <select id="finCompany"><option value="global">SAR Global</option><option value="old">SAR Logisolutions (old)</option><option value="both">Both</option></select></label>
       <label class="f">From <select id="finFrom" aria-label="Invoices from month"></select></label>
       <label class="f">To <select id="finTo" aria-label="Invoices to month"></select></label>
       <div class="view-toggle" id="finTabs" role="group" aria-label="Finance report">
@@ -1293,7 +1294,7 @@ function render() {
     renderTable();
   }
 
-  $("footnote").textContent = "Source: SARFD tblInvoice — SAR Global PTE Ltd sales, sub-lease, sundry and M&R invoices, credit notes subtracted (debit notes and proformas excluded). The Charges filter applies to the whole page; Billing Details also shows the charges left out. Amounts in USD"
+  $("footnote").textContent = "Source: SARFD tblInvoice — SAR Global PTE Ltd (and the old SAR LOGISOLUTIONS PTE. LTD. for Jan-26) sales, sub-lease, sundry and M&R invoices, credit notes subtracted (debit notes and proformas excluded). The Charges filter applies to the whole page; Billing Details also shows the charges left out. Amounts in USD"
     + (state.currency === "INR" ? `, shown in INR at ₹${state.rate}/USD` : "") + "."
     + (state.lastSync ? ` Last invoice sync ${new Date(state.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST.` : "");
 }
@@ -2197,10 +2198,11 @@ async function loadDep() {
     dep.data = await api("/api/mongo", { dataset: "deploy" });
     const months = dep.data.bls.map((b) => b.date.slice(0, 7)).sort();
     const dataFirst = months[0] || thisMonth(), last = thisMonth() > (months.at(-1) || "") ? thisMonth() : months.at(-1);
-    const first = dataFirst < FIRST_MONTH ? dataFirst : FIRST_MONTH;   // pickers start at Jan-26; the default stays the first month with BLs
+    const first = dataFirst < FIRST_MONTH ? dataFirst : FIRST_MONTH;   // pickers start at Jan-26; the default starts Feb-26
+    const defFrom = dataFirst > DEFAULT_FROM_MONTH ? dataFirst : DEFAULT_FROM_MONTH;
     const all = monthsBetween(first, last);
     dep.months = all;
-    if (!dep.from || !all.includes(dep.from)) { dep.from = dataFirst; dep.to = last; if (dep.period === "week") dep.from = dep.to = depCurrentMonth(); }
+    if (!dep.from || !all.includes(dep.from)) { dep.from = defFrom; dep.to = last; if (dep.period === "week") dep.from = dep.to = depCurrentMonth(); }
     if (!dep.to || !all.includes(dep.to)) dep.to = last;
     depFillMonths();
     renderDep();
@@ -2241,7 +2243,7 @@ function renderDep() {
   const [k0, k1] = depKeys(), bls = depInRange();
   const tanks = bls.reduce((a, b) => a + b.tanks.length, 0);
   const synced = dep.data.lastSync ? new Date(dep.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
-  $("depSub").textContent = `Export BLs of SAR Global PTE Ltd by HBL date · BLs up to ${dep.data.dataTo ? shortDate(dep.data.dataTo) : "—"} · synced ${synced}`;
+  $("depSub").textContent = `Export BLs of SAR Global PTE Ltd (Jan-26: SAR LOGISOLUTIONS) by HBL date · BLs up to ${dep.data.dataTo ? shortDate(dep.data.dataTo) : "—"} · synced ${synced}`;
   $("depSub").title = $("depSub").textContent;
   $("depTitle").textContent = `Tanks Deployed — ${depLabel[k0]} › ${depLabel[k1]}`;
   $("depSearch").placeholder = `Search ${depLabel[k0].toLowerCase()} or ${depLabel[k1].toLowerCase()}…`;
@@ -2289,7 +2291,7 @@ $("depPeriod").onclick = (e) => {
   dep.period = b.dataset.p; store.set("sar.depPeriod", dep.period);
   if (dep.months.length) {
     if (dep.period === "week") { dep.monthRange = { from: dep.from, to: dep.to }; dep.from = dep.to = depCurrentMonth(); }
-    else { const r = dep.monthRange || { from: dep.months.find((m) => (dep.data?.bls || []).some((b) => b.date.startsWith(m))) || dep.months[0], to: dep.months.at(-1) }; dep.from = r.from; dep.to = r.to; }
+    else { const r = dep.monthRange || { from: dep.months.includes(DEFAULT_FROM_MONTH) ? DEFAULT_FROM_MONTH : dep.months[0], to: dep.months.at(-1) }; dep.from = r.from; dep.to = r.to; }
     depFillMonths();
   }
   renderDep();
@@ -2359,7 +2361,7 @@ $("bXlsx").onclick = () => {
 // Age = days past the due date as of today: Not Due up to 30, then >30, >60, >90 days.
 const FIN_AGES = [["nd", "Not Due"], ["d30", "Overdue > 30 days"], ["d60", "Overdue > 60 days"], ["d90", "Overdue > 90 days"]];
 const FIN_SIDES = { ar: { title: "Accounts Receivable", table: "Outstanding Amount", party: "Customer" }, ap: { title: "Accounts Payable", table: "Payable Amount", party: "Vendor" } };
-const fin = { data: null, remarks: new Map(), side: store.get("sar.finSide", "ar"), from: "", to: "", months: [], q: "", drill: null, drillQ: "", editing: null, editingAcc: null };
+const fin = { data: null, remarks: new Map(), side: store.get("sar.finSide", "ar"), co: "global", from: "", to: "", months: [], q: "", drill: null, drillQ: "", editing: null, editingAcc: null };
 // Finance tables show whole dollars; the Excel exports keep cents.
 const usd2 = (v) => (Math.round(v) < 0 ? "−" : "") + "$" + Math.abs(Math.round(v)).toLocaleString("en-US");
 const overdueDays = (d) => Math.floor((Date.now() - new Date(d.due + "T00:00")) / DAY_MS);
@@ -2388,7 +2390,7 @@ $("finSearch").oninput = (e) => { fin.q = e.target.value; renderFin(); };
 
 // Invoice-date month range: defaults to every month (Jan-26 or the oldest open invoice, to the current month).
 function finFillMonths() {
-  const ms = (fin.data?.docs || []).map((d) => d.date.slice(0, 7)).sort();
+  const ms = (fin.data?.docs || []).filter((d) => finCoOk(d.co)).map((d) => d.date.slice(0, 7)).sort();
   const first = ms[0] && ms[0] < FIRST_MONTH ? ms[0] : FIRST_MONTH, last = ms.at(-1) > thisMonth() ? ms.at(-1) : thisMonth();
   const all = monthsBetween(first, last), wasAll = !fin.months.length || (fin.from === fin.months[0] && fin.to === fin.months.at(-1));
   fin.months = all;
@@ -2400,23 +2402,32 @@ function finFillMonths() {
 $("finFrom").onchange = (e) => { fin.from = e.target.value; if (fin.to < fin.from) { fin.to = fin.from; $("finTo").value = fin.to; } renderFin(); };
 $("finTo").onchange = (e) => { fin.to = e.target.value; if (fin.from > fin.to) { fin.from = fin.to; $("finFrom").value = fin.from; } renderFin(); };
 const finRanged = () => fin.months.length > 0 && (fin.from !== fin.months[0] || fin.to !== fin.months.at(-1));
+// Company: SAR Global (default), the old SAR LOGISOLUTIONS PTE. LTD., or both.
+const FIN_CO_LABEL = { global: "SAR Global PTE Ltd", old: "SAR LOGISOLUTIONS PTE. LTD. (old company)", both: "SAR Global PTE Ltd and SAR LOGISOLUTIONS PTE. LTD." };
+const finCoOk = (co) => fin.co === "both" || (co || "global") === fin.co;
+$("finCompany").onchange = (e) => { fin.co = e.target.value; fin.editing = null; fin.editingAcc = null; finFillMonths(); renderFin(); };
 const finInRange = (d) => { const m = d.date.slice(0, 7); return (!fin.from || m >= fin.from) && (!fin.to || m <= fin.to); };
-const finDocs = () => (fin.data?.docs || []).filter((d) => d.side === fin.side && finInRange(d));
+const finDocs = () => (fin.data?.docs || []).filter((d) => d.side === fin.side && finCoOk(d.co) && finInRange(d));
 function finRows() {
   const q = fin.q.toLowerCase(), m = new Map();
   const row = (party) => { let r = m.get(party); if (!r) m.set(party, r = { party, total: 0, n: 0, ...Object.fromEntries(FIN_AGES.map(([k]) => [k, 0])) }); return r; };
   for (const d of finDocs()) { const r = row(d.party); r[finAge(d)] += d.outstanding; r.total += d.outstanding; r.n++; }
   // parties with money on account but no open invoice still count (not when a month range is picked)
+  const withG = fin.co !== "old", withO = fin.co !== "global";
+  const autoG = fin.data?.onAccount?.[fin.side] || {}, autoO = fin.data?.onAccountOld?.[fin.side] || {};
   if (!finRanged()) {
-    for (const p of Object.keys(fin.data?.onAccount?.[fin.side] || {})) row(p);
-    for (const [, n] of fin.remarks) if (n.side === fin.side && n.onAccount != null) row(n.party);
+    if (withG) for (const p of Object.keys(autoG)) row(p);
+    if (withO) for (const p of Object.keys(autoO)) row(p);
+    if (withG) for (const [, n] of fin.remarks) if (n.side === fin.side && n.onAccount != null) row(n.party);
   }
   const rows = [...m.values()].map((r) => {
     const note = fin.remarks.get(remKey(fin.side, r.party)) || {};
-    const auto = fin.data?.onAccount?.[fin.side]?.[r.party] || 0;
-    const acc = note.onAccount != null ? note.onAccount : auto;            // admin figure wins over SARFD's
+    // admin figures belong to SAR Global; the old company's on-account comes from SARFD only
+    const useNote = withG && note.onAccount != null, autoOld = withO ? autoO[r.party] || 0 : 0;
+    const auto = (withG ? autoG[r.party] || 0 : 0) + autoOld;
+    const acc = useNote ? note.onAccount + autoOld : auto;
     const accSigned = fin.side === "ap" ? acc : -acc;                      // receipts lower receivables; payments lower payables
-    return { ...r, remark: note.remark || "", acc, accSigned, accSource: note.onAccount != null ? "admin" : auto ? "sarfd" : "", accBy: note.onAccountBy, accAt: note.onAccountAt,
+    return { ...r, remark: note.remark || "", acc, accSigned, accSource: useNote ? "admin" : auto ? "sarfd" : "", accBy: note.onAccountBy, accAt: note.onAccountAt,
              net: r.total + accSigned };
   }).filter((r) => !q || r.party.toLowerCase().includes(q) || r.remark.toLowerCase().includes(q));
   return rows.sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || a.party.localeCompare(b.party));
@@ -2429,7 +2440,7 @@ function renderFin() {
   const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   const synced = fin.data.lastSync ? new Date(fin.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
   const ranged = finRanged();
-  $("finSub").textContent = `Open invoices of SAR Global PTE Ltd${ranged ? ` dated ${monthLabel(fin.from)} – ${monthLabel(fin.to)}` : ""} · ageing as on ${today} · invoices up to ${fin.data.dataTo ? shortDate(fin.data.dataTo) : "—"} · synced ${synced}`;
+  $("finSub").textContent = `Open invoices of ${FIN_CO_LABEL[fin.co]}${ranged ? ` dated ${monthLabel(fin.from)} – ${monthLabel(fin.to)}` : ""} · ageing as on ${today} · invoices up to ${fin.data.dataTo ? shortDate(fin.data.dataTo) : "—"} · synced ${synced}`;
   $("finSub").title = $("finSub").textContent;
   $("finFoot").innerHTML = `Ageing columns = open invoices (invoice amount less what has been knocked off against them), aged by days past the due date: Not Due up to 30 days, then over 30, 60 and 90 days.
     <b>On Account</b> = ${fin.side === "ap" ? "payments made" : "receipts and credit notes received"} but not yet knocked off against an invoice — from SARFD, or entered by an admin (marked ✎) where SARFD doesn't have them.
@@ -2458,7 +2469,7 @@ function renderFin() {
       : r.accSource === "sarfd" ? "Not allocated to an invoice in SARFD" : "";
     const acc = fin.editingAcc === r.party
       ? `<input class="rem-input acc-input" type="number" step="0.01" min="0" data-acc="${ep}" value="${r.accSource === "admin" ? r.acc : ""}" placeholder="${r.accSource === "sarfd" ? r.acc : "0.00"}" title="Amount on account (positive). Empty = use SARFD">`
-      : `${Math.abs(r.accSigned) >= 0.005 ? `<button class="num${r.accSigned < 0 ? " neg" : ""}" data-acc-p="${ep}" title="Show the on-account detail">${usd2(r.accSigned)}</button>${r.accSource === "admin" ? ' <span class="acc-man" title="' + esc(accTitle) + '">✎</span>' : ""}` : ""}${admin ? `<button class="rem-edit" data-edit-acc="${ep}" title="Enter on-account amount">${edit}</button>` : ""}`;
+      : `${Math.abs(r.accSigned) >= 0.005 ? `<button class="num${r.accSigned < 0 ? " neg" : ""}" data-acc-p="${ep}" title="Show the on-account detail">${usd2(r.accSigned)}</button>${r.accSource === "admin" ? ' <span class="acc-man" title="' + esc(accTitle) + '">✎</span>' : ""}` : ""}${admin && fin.co !== "old" ? `<button class="rem-edit" data-edit-acc="${ep}" title="Enter on-account amount (SAR Global)">${edit}</button>` : ""}`;
     return `<tr><td class="txt party" title="${ep}">${ep}</td>${FIN_AGES.map(([k]) => cell(r[k], r.party, k)).join("")}${cell(r.total, r.party, "", "gt")}
       <td class="acc" title="${esc(accTitle)}">${acc}</td><td class="net${r.net < 0 ? " neg" : ""}">${usd2(r.net)}</td>
       <td class="txt rem" title="${esc(r.remark)}">${rem}</td></tr>`;
@@ -2529,7 +2540,7 @@ const finDocRow = (d) => ({ Party: d.party, "Reference No": d.ref, "Invoice No":
 function openAccDetail(party) { fin.drill = { acc: true, party, title: party ? `${party} › On Account` : `${FIN_SIDES[fin.side].title} › On Account` }; fin.drillQ = ""; $("fSearch").value = ""; $("finOverlay").classList.remove("hidden"); renderAccDetail(); }
 function accVouchers() {
   const q = fin.drillQ.toLowerCase(), p = fin.drill.party;
-  return (fin.data.onAccountDocs || []).filter((v) => v.side === fin.side && (!p || v.party === p))
+  return (fin.data.onAccountDocs || []).filter((v) => v.side === fin.side && finCoOk(v.co) && (!p || v.party === p))
     .filter((v) => !q || [v.voucherNo, v.party, v.ref, v.narration, v.type].some((x) => (x || "").toLowerCase().includes(q)))
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 }
@@ -2568,7 +2579,7 @@ function renderAccDetail() {
     + (vouchers.map((v) => `<tr><td class="mono">${esc(v.voucherNo)}</td><td>${esc(v.type)}</td><td>${fmtD(v.date)}</td>
         <td class="name" title="${esc(p ? [v.ref, v.narration].filter(Boolean).join(" · ") : v.party)}">${esc(p ? [v.ref, v.narration].filter(Boolean).join(" · ") : v.party) || dash}</td>
         <td class="amt mono">${usd2(v.amount)}</td><td class="amt mono">${usd2(v.allocated)}</td><td class="amt mono">${usd2(v.onAccount)}</td></tr>`).join("")
-      || `<tr><td colspan="7" class="blank">None — SARFD has no unallocated ${ap ? "payments" : "receipts or credit notes"} for ${p ? "this party" : "SAR Global"}${p && rows[0]?.accSource === "admin" ? ", so the entered amount is used" : ""}.</td></tr>`);
+      || `<tr><td colspan="7" class="blank">None — SARFD has no unallocated ${ap ? "payments" : "receipts or credit notes"} for ${p ? "this party" : FIN_CO_LABEL[fin.co]}${p && rows[0]?.accSource === "admin" ? ", so the entered amount is used" : ""}.</td></tr>`);
   $("fTable").innerHTML = html + "</tbody>";
 }
 $("fTable").addEventListener("click", (e) => { const b = e.target.closest("[data-acc-party]"); if (b) openAccDetail(b.dataset.accParty); });

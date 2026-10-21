@@ -1506,7 +1506,7 @@ function renderPivot() {
   const head1 = `<th class="dim last" style="${CHARGE_COL}">Charge Name</th>`
     + pivotCols.map((c) => (c.grand ? `<th class="gt">Grand Total</th>`
       : c.week ? `<th>${c.week}<span class="wk-date">${shortDate(c.from)}${c.to !== c.from ? ` – ${shortDate(c.to)}` : ""}</span></th>`
-      : `<th class="mtot">${monthLabel(c.m)} Total</th>`)).join("");
+      : `<th class="mtot">${monthLabel(c.m)}</th>`)).join("");
   const head2 = "";
 
   const val = (v, i, ci) => {

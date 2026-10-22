@@ -257,6 +257,10 @@
   .modal td, .modal th { text-align: left; font-size: 12px; padding: 8px 12px; }
   .modal td.amt, .modal th.amt { text-align: right; }
   .modal td:first-child, .modal th:first-child { position: static; }
+  .modal tr.colf th { padding: 4px 6px; border-bottom: 1px solid var(--line); background: var(--card); }
+  .modal tr.colf input { width: 100%; min-width: 64px; height: 26px; padding: 0 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
+    font: inherit; font-size: 11.5px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink); }
+  .modal tr.colf input:focus { outline: none; border-color: var(--accent); background: #fff; }
   .pill { font-family: "Plus Jakarta Sans", sans-serif; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #E3EBFD; color: #3255B5; }
   .pill.cn { background: #FDE3DE; color: #C24A2E; } .pill.dn { background: #FEF3C7; color: #92700C; }
 
@@ -950,6 +954,38 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
+// ---- column filters for the drill-down pop-ups: a box under each heading; a row stays when every filled box
+// matches its cell (text: contains; numbers also take >, <, >=, <= e.g. ">1000").
+const colFilters = {}, colFilterRender = {};   // table id -> [text per column] / re-render function
+function colFilterRow(id, n, skip = []) {
+  const f = colFilters[id] || (colFilters[id] = []);
+  return `<tr class="colf">${Array.from({ length: n }, (_, i) => `<th>${skip.includes(i) ? ""
+    : `<input data-cf="${id}" data-i="${i}" value="${esc(f[i] || "")}" placeholder="Filter" aria-label="Filter this column" autocomplete="off">`}</th>`).join("")}</tr>`;
+}
+function colFilterApply(id, rows, getters) {
+  const qs = (colFilters[id] || []).map((v) => (v || "").trim().toLowerCase());
+  if (!qs.some(Boolean)) return rows;
+  const test = (v, q) => {
+    const m = typeof v === "number" && q.match(/^(>=|<=|>|<|=)\s*(-?[\d,.]+)$/);
+    if (m) { const x = +m[2].replace(/,/g, ""); return m[1] === ">" ? v > x : m[1] === "<" ? v < x : m[1] === ">=" ? v >= x : m[1] === "<=" ? v <= x : Math.round(v) === x; }
+    return String(typeof v === "number" ? Math.round(v * 100) / 100 : v ?? "").toLowerCase().includes(q);
+  };
+  return rows.filter((r) => getters.every((g, i) => !qs[i] || !g || test(g(r), qs[i])));
+}
+function colFilterReset(id) { colFilters[id] = []; }
+function colFilterStick(table) {   // second header row (the filters) stays under the first while scrolling
+  const hr = table.tHead?.rows; if (!hr || hr.length < 2) return;
+  const h = hr[0].getBoundingClientRect().height; for (const th of hr[1].cells) th.style.top = `${h}px`;
+}
+document.addEventListener("input", (e) => {
+  const inp = e.target.closest?.("input[data-cf]"); if (!inp) return;
+  const id = inp.dataset.cf, i = inp.dataset.i;
+  (colFilters[id] || (colFilters[id] = []))[+i] = inp.value;
+  colFilterRender[id]?.();
+  const again = document.querySelector(`input[data-cf="${id}"][data-i="${i}"]`);
+  if (again && again !== document.activeElement) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+});
+
 const CAT_COLORS = { Lease: "#2563eb", Detention: "#d97706", EXIM: "#059669", "M&R": "#7c3aed", Other: "#64748b" };
 // Charges outside Lease / Detention / EXIM / M&R are shown under their own name (KPI card, mix, trend), not lumped into "Other".
 const MAIN_CATS = ["Lease", "Detention", "EXIM", "M&R"];
@@ -1684,7 +1720,7 @@ function openChargeBreakdown(charge) {
     if (!r) m.set(key, r = { shipper: l.shipper || "", agent: l.agent || "", pol: l.pol || "", pod: l.pod || "", total: 0, invoices: new Set() });
     r.total += l.amount; r.invoices.add(l.invoiceId);
   }
-  Object.assign(sum, { charge, rows: [...m.values()].sort((a, b) => b.total - a.total), q: "" });
+  Object.assign(sum, { charge, rows: [...m.values()].sort((a, b) => b.total - a.total), q: "" }); colFilterReset("sTable");
   $("sSearch").value = "";
   $("sumOverlay").classList.remove("hidden");
   renderChargeBreakdown();
@@ -1692,20 +1728,23 @@ function openChargeBreakdown(charge) {
 }
 function chargeBreakdownRows() {
   const q = sum.q.toLowerCase();
-  return q ? sum.rows.filter((r) => [r.shipper, r.agent, r.pol, r.pod].some((v) => v.toLowerCase().includes(q))) : sum.rows;
+  const rows = q ? sum.rows.filter((r) => [r.shipper, r.agent, r.pol, r.pod].some((v) => v.toLowerCase().includes(q))) : sum.rows;
+  return colFilterApply("sTable", rows, [(r) => r.shipper, (r) => r.agent, (r) => r.pol, (r) => r.pod, (r) => r.total]);
 }
 function renderChargeBreakdown() {
   const rows = chargeBreakdownRows(), total = rows.reduce((t, r) => t + r.total, 0);
   const txt = (v) => (v ? esc(v) : '<span class="blank">(blank)</span>');
   $("sTitle").textContent = sum.charge || "(blank)";
   $("sSub").textContent = `${shortDate(state.from)} – ${shortDate(state.to)} · ${rows.length} shipper / party / lane combinations · Total ${money(total)}`;
-  $("sTable").innerHTML = `<thead><tr><th>Shipper Name</th><th>Party Name</th><th>POL</th><th>POD</th><th class="amt">Total</th></tr></thead><tbody>`
+  $("sTable").innerHTML = `<thead><tr><th>Shipper Name</th><th>Party Name</th><th>POL</th><th>POD</th><th class="amt">Total</th></tr>${colFilterRow("sTable", 5)}</thead><tbody>`
     + (rows.map((r, i) => `<tr><td class="name" title="${esc(r.shipper)}">${txt(r.shipper)}</td><td class="name" title="${esc(r.agent)}">${txt(r.agent)}</td>`
         + `<td>${txt(r.pol)}</td><td>${txt(r.pod)}</td>`
         + `<td class="amt"><button class="num${r.total < 0 ? " neg" : ""}" data-i="${i}" title="Show the invoices">${money(r.total)}</button></td></tr>`).join("")
       || '<tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8">No matching rows</td></tr>')
     + `</tbody><tfoot><tr><td colspan="4">Total (${rows.length})</td><td class="amt${total < 0 ? " neg" : ""}">${money(total)}</td></tr></tfoot>`;
+  colFilterStick($("sTable"));
 }
+colFilterRender.sTable = () => renderChargeBreakdown();
 function closeChargeBreakdown() { $("sumOverlay").classList.add("hidden"); sum.charge = null; }
 $("sSearch").oninput = (e) => { sum.q = e.target.value; renderChargeBreakdown(); };
 $("sClose").onclick = closeChargeBreakdown;
@@ -1728,20 +1767,23 @@ $("sCsv").onclick = () => {
 
 // ============================================================ drill-down modal
 function openDrill(f) {
-  state.drill = { from: state.from, to: state.to, ...f }; state.drillQ = ""; state.drillLimit = 200;
+  state.drill = { from: state.from, to: state.to, ...f }; state.drillQ = ""; state.drillLimit = 200; colFilterReset("mTable");
   $("mSearch").value = ""; $("overlay").classList.remove("hidden"); renderDrill(); $("mSearch").focus();
 }
+const DRILL_COLS = [(l) => `${shortDate(l.date)} ${l.date}`, (l) => l.invoiceNo, (l) => l.docType, (l) => l.agent, (l) => l.lane || "", (l) => l.charge,
+  (l) => catLabel(catOf(l)), (l) => l.blNo, (l) => l.amount];
 function drillRows() {
   const f = state.drill, q = state.drillQ.toLowerCase();
   const base = state.lines.filter((l) => matches(l, f) && (f.notCharges || f.allCharges || f.charge !== undefined || state.charges.has(l.charge)));
-  return q ? base.filter((l) => [l.invoiceNo, l.agent, l.lane || "", l.countryLane || "", l.charge, l.blNo, l.jobNo].some((v) => v.toLowerCase().includes(q))) : base;
+  const searched = q ? base.filter((l) => [l.invoiceNo, l.agent, l.lane || "", l.countryLane || "", l.charge, l.blNo, l.jobNo].some((v) => v.toLowerCase().includes(q))) : base;
+  return colFilterApply("mTable", searched, DRILL_COLS);
 }
 function renderDrill() {
   const f = state.drill, rows = drillRows(), total = rows.reduce((s, l) => s + l.amount, 0);
   $("mTitle").textContent = f.title;
   $("mSub").textContent = `${shortDate(f.from)} – ${shortDate(f.to)} · ${new Set(rows.map((l) => l.invoiceId)).size} documents · ${rows.length} charge lines · Net ${money(total)}`;
   const pill = (t) => `<span class="pill${t === "Credit Note" ? " cn" : t === "Debit Note" ? " dn" : ""}">${t}</span>`;
-  $("mTable").innerHTML = `<thead><tr><th>Date</th><th>Invoice No</th><th>Type</th><th>Agent</th><th>POL → POD</th><th>Charge</th><th>Category</th><th>BL No</th><th class="amt">Amount</th></tr></thead><tbody>`
+  $("mTable").innerHTML = `<thead><tr><th>Date</th><th>Invoice No</th><th>Type</th><th>Agent</th><th>POL → POD</th><th>Charge</th><th>Category</th><th>BL No</th><th class="amt">Amount</th></tr>${colFilterRow("mTable", 9)}</thead><tbody>`
     + (rows.slice(0, state.drillLimit).map((l) => `<tr><td>${shortDate(l.date)}</td><td class="mono">${esc(l.invoiceNo)}</td><td>${pill(l.docType)}</td>
         <td class="name" title="${esc(l.agent)}">${esc(l.agent)}</td><td>${l.lane ? esc(l.lane) : '<span class="dash">—</span>'}</td>
         <td class="name" title="${esc(l.charge)}">${esc(l.charge)}</td><td><span class="dot" style="background:${catColor(catOf(l))}"></span> ${esc(catLabel(catOf(l)))}</td>
@@ -1749,7 +1791,9 @@ function renderDrill() {
       || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">No matching lines</td></tr>') + "</tbody>";
   $("mMore").classList.toggle("hidden", rows.length <= state.drillLimit);
   $("mMore").textContent = `Show more (${rows.length - state.drillLimit} left)`;
+  colFilterStick($("mTable"));
 }
+colFilterRender.mTable = () => { state.drillLimit = 200; renderDrill(); };
 function closeDrill() { $("overlay").classList.add("hidden"); state.drill = null; }
 $("mSearch").oninput = (e) => { state.drillQ = e.target.value; state.drillLimit = 200; renderDrill(); };
 $("mMore").onclick = () => { state.drillLimit += 200; renderDrill(); };
@@ -2042,13 +2086,16 @@ function tankMatches(t, f) {
   return true;
 }
 function openTanks(f) {
-  mr.drill = f; mr.drillQ = ""; $("tSearch").value = "";
+  mr.drill = f; mr.drillQ = ""; $("tSearch").value = ""; colFilterReset("tTable");
   $("mrOverlay").classList.remove("hidden"); renderTanks(); $("tSearch").focus();
 }
+const TANK_COLS = [(t) => t.c, (t) => [t.size, t.type].filter(Boolean).join(" "), (t) => t.principal, (t) => t.activity, (t) => (t.date ? `${shortDate(t.date)} ${t.date}` : ""),
+  (t) => idleDays(t) ?? "", (t) => t.agent, (t) => t.from, (t) => t.to, (t) => t.exportBl || t.importBl || t.jobNo];
 function tankRows() {
   const q = mr.drillQ.toLowerCase();
   return (mr.drill.allPrincipals ? mr.data.tanks : mrTanks()).filter((t) => tankMatches(t, mr.drill))
     .filter((t) => !q || [t.c, t.type, t.principal, t.activity, t.agent, t.from, t.to, t.jobNo, t.importBl, t.exportBl].some((v) => (v || "").toLowerCase().includes(q)))
+    .filter((t) => colFilterApply("tTable", [t], TANK_COLS).length)
     .sort((a, b) => (idleDays(b) ?? -1) - (idleDays(a) ?? -1) || a.c.localeCompare(b.c));
 }
 function renderTanks() {
@@ -2057,7 +2104,7 @@ function renderTanks() {
   const idle = rows.map(idleDays).filter((d) => d != null);
   $("tSub").textContent = `${n0(rows.length)} tanks${idle.length ? ` · average ${Math.round(idle.reduce((a, b) => a + b, 0) / idle.length)} idle days` : ""} · longest idle first`;
   const dash = '<span class="dash">—</span>', txt = (v) => (v ? esc(v) : dash);
-  $("tTable").innerHTML = `<thead><tr><th>Container</th><th>Size / Type</th><th>Principal</th><th>Activity</th><th>Activity Date</th><th class="amt">Idle Days</th><th>Agent</th><th>From</th><th>To</th><th>Job / BL</th></tr></thead><tbody>`
+  $("tTable").innerHTML = `<thead><tr><th>Container</th><th>Size / Type</th><th>Principal</th><th>Activity</th><th>Activity Date</th><th class="amt">Idle Days</th><th>Agent</th><th>From</th><th>To</th><th>Job / BL</th></tr>${colFilterRow("tTable", 10)}</thead><tbody>`
     + (rows.slice(0, 1500).map((t) => { const d = idleDays(t); return `<tr><td class="mono">${esc(t.c)}</td><td>${esc([t.size, t.type].filter(Boolean).join(" "))}</td>
         <td class="name" title="${esc(t.principal)}">${esc(t.principal)}</td>
         <td><span class="bucket-pill" style="background:${MR_COLORS[t.bucket]}1F;color:${MR_COLORS[t.bucket]}">${esc(t.activity)}</span></td>
@@ -2065,7 +2112,9 @@ function renderTanks() {
         <td class="name" title="${esc(t.agent)}">${esc(t.agent)}</td><td class="name" title="${esc(t.from)}">${txt(t.from)}</td><td class="name" title="${esc(t.to)}">${txt(t.to)}</td>
         <td class="mono">${txt(t.exportBl || t.importBl || t.jobNo)}</td></tr>`; }).join("")
       || '<tr><td colspan="10" style="text-align:center;padding:30px;color:#94a3b8">No matching tanks</td></tr>') + "</tbody>";
+  colFilterStick($("tTable"));
 }
+colFilterRender.tTable = () => renderTanks();
 function closeTanks() { $("mrOverlay").classList.add("hidden"); mr.drill = null; }
 $("tSearch").oninput = (e) => { mr.drillQ = e.target.value; renderTanks(); };
 $("tClose").onclick = closeTanks;
@@ -2391,22 +2440,26 @@ $("depXlsx").onclick = () => {
 };
 
 // ---- BL pop-up
-function openBls(title, pred) { dep.drill = { title, pred }; dep.drillQ = ""; $("bSearch").value = ""; $("depOverlay").classList.remove("hidden"); renderBls(); $("bSearch").focus(); }
+function openBls(title, pred) { dep.drill = { title, pred }; dep.drillQ = ""; colFilterReset("bTable"); $("bSearch").value = ""; $("depOverlay").classList.remove("hidden"); renderBls(); $("bSearch").focus(); }
 function blRows() {
   const q = dep.drillQ.toLowerCase();
   return depInRange().filter(dep.drill.pred)
-    .filter((x) => !q || [x.bl, x.shipper, x.plrAgent, x.pol, x.pod, x.consignee, x.tanks.join(" ")].some((v) => v.toLowerCase().includes(q)));
+    .filter((x) => !q || [x.bl, x.shipper, x.plrAgent, x.pol, x.pod, x.consignee, x.tanks.join(" ")].some((v) => v.toLowerCase().includes(q)))
+    .filter((x) => colFilterApply("bTable", [x], [(b) => b.bl, (b) => `${shortDate(b.date)} ${b.date}`, (b) => b.shipper, (b) => b.plrAgent, (b) => b.pol, (b) => b.pod,
+      (b) => b.tanks.length, (b) => b.tanks.join(", ")]).length);
 }
 function renderBls() {
   const rows = blRows(), tanks = rows.reduce((a, x) => a + x.tanks.length, 0), dash = '<span class="dash">—</span>';
   $("bTitle").textContent = dep.drill.title;
   $("bSub").textContent = `${n0(rows.length)} BLs · ${n0(tanks)} tanks · newest first`;
-  $("bTable").innerHTML = `<thead><tr><th>HBL No</th><th>HBL Date</th><th>Shipper</th><th>PLR Agent</th><th>POL</th><th>POD</th><th class="amt">Tanks</th><th>Container Nos</th></tr></thead><tbody>`
+  $("bTable").innerHTML = `<thead><tr><th>HBL No</th><th>HBL Date</th><th>Shipper</th><th>PLR Agent</th><th>POL</th><th>POD</th><th class="amt">Tanks</th><th>Container Nos</th></tr>${colFilterRow("bTable", 8)}</thead><tbody>`
     + (rows.slice(0, 1500).map((x) => `<tr><td class="mono">${esc(x.bl)}</td><td>${shortDate(x.date)}</td><td class="name" title="${esc(x.shipper)}">${esc(x.shipper)}</td>
         <td class="name" title="${esc(x.plrAgent)}">${esc(x.plrAgent)}</td><td>${x.pol ? esc(x.pol) : dash}</td><td>${x.pod ? esc(x.pod) : dash}</td>
         <td class="amt mono">${x.tanks.length}</td><td class="bl-tanks" title="${esc(x.tanks.join(", "))}">${esc(x.tanks.join(", ")) || dash}</td></tr>`).join("")
       || '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8">No matching BLs</td></tr>') + "</tbody>";
+  colFilterStick($("bTable"));
 }
+colFilterRender.bTable = () => renderBls();
 function closeBls() { $("depOverlay").classList.add("hidden"); dep.drill = null; }
 $("bSearch").oninput = (e) => { dep.drillQ = e.target.value; renderBls(); };
 $("bClose").onclick = closeBls;
@@ -2611,10 +2664,13 @@ function renderAccDetail() {
 $("fTable").addEventListener("click", (e) => { const b = e.target.closest("[data-acc-party]"); if (b) openAccDetail(b.dataset.accParty); });
 
 // ---- invoice pop-up
-function openFinDocs(title, pred) { fin.drill = { title, pred }; fin.drillQ = ""; $("fSearch").value = ""; $("finOverlay").classList.remove("hidden"); renderFinDocs(); $("fSearch").focus(); }
+function openFinDocs(title, pred) { fin.drill = { title, pred }; fin.drillQ = ""; colFilterReset("fTable"); $("fSearch").value = ""; $("finOverlay").classList.remove("hidden"); renderFinDocs(); $("fSearch").focus(); }
 function finDocRows() {
   const q = fin.drillQ.toLowerCase();
-  return finDocs().filter(fin.drill.pred).filter((d) => !q || [d.ref, d.invoiceNo, d.party, d.bl, d.job].some((v) => (v || "").toLowerCase().includes(q)))
+  const ap = fin.side === "ap";
+  const cols = [(d) => d.ref, ...(ap ? [(d) => d.invoiceNo] : []), (d) => d.party, (d) => `${shortDate(d.date)} ${d.date}`, (d) => `${shortDate(d.due)} ${d.due}`,
+    (d) => overdueDays(d), (d) => d.amount, (d) => d.adjusted, (d) => d.outstanding, (d) => d.bl];
+  return colFilterApply("fTable", finDocs().filter(fin.drill.pred).filter((d) => !q || [d.ref, d.invoiceNo, d.party, d.bl, d.job].some((v) => (v || "").toLowerCase().includes(q))), cols)
     .sort((a, b) => overdueDays(b) - overdueDays(a));
 }
 function renderFinDocs() {
@@ -2622,13 +2678,15 @@ function renderFinDocs() {
   $("fTitle").textContent = fin.drill.title;
   $("fSub").textContent = `${n0(rows.length)} invoices · outstanding ${usd2(total)} · most overdue first`;
   $("fTable").innerHTML = `<thead><tr><th>Reference No</th>${ap ? "<th>Purchase Invoice</th>" : ""}<th>Party</th><th>Reference Date</th><th>Due Date</th><th class="amt">Overdue Days</th>
-      <th class="amt">Invoice Amount</th><th class="amt">Adjusted</th><th class="amt">Outstanding</th><th>BL No</th></tr></thead><tbody>`
+      <th class="amt">Invoice Amount</th><th class="amt">Adjusted</th><th class="amt">Outstanding</th><th>BL No</th></tr>${colFilterRow("fTable", ap ? 10 : 9)}</thead><tbody>`
     + (rows.slice(0, 2000).map((d) => `<tr><td class="mono">${esc(d.ref)}</td>${ap ? `<td class="mono">${esc(d.invoiceNo)}</td>` : ""}<td class="name" title="${esc(d.party)}">${esc(d.party)}</td>
         <td>${shortDate(d.date)}</td><td>${shortDate(d.due)}</td><td class="amt mono">${overdueDays(d)}</td><td class="amt mono">${usd2(d.amount)}</td>
         <td class="amt mono">${usd2(d.adjusted)}</td><td class="amt mono${d.outstanding < 0 ? " neg" : ""}">${usd2(d.outstanding)}</td><td class="mono">${d.bl ? esc(d.bl) : dash}</td></tr>`).join("")
       || `<tr><td colspan="${ap ? 10 : 9}" style="text-align:center;padding:30px;color:#94a3b8">No matching invoices</td></tr>`) + "</tbody>"
     + `<tfoot><tr><td colspan="${ap ? 8 : 7}">Total (${n0(rows.length)})</td><td class="amt">${usd2(total)}</td><td></td></tr></tfoot>`;
+  colFilterStick($("fTable"));
 }
+colFilterRender.fTable = () => renderFinDocs();
 function closeFinDocs() { $("finOverlay").classList.add("hidden"); fin.drill = null; }
 $("fSearch").oninput = (e) => { fin.drillQ = e.target.value; fin.drill.acc ? renderAccDetail() : renderFinDocs(); };
 $("fClose").onclick = closeFinDocs;

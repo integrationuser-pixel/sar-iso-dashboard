@@ -649,10 +649,10 @@
     </div>
   </div>
   <div class="page-head hidden" id="mrHead">
-    <div class="ph-text"><h2 id="mrTitle">Total Inventory</h2><p class="sub" id="mrSub">Loading…</p></div>
+    <div class="ph-text"><h2 id="mrTitle">M&amp;R Operations</h2><p class="sub" id="mrSub">Loading…</p></div>
     <div class="ph-controls">
       <label class="f">Principal <select id="mrPrincipal"><option value="">All principals</option></select></label>
-      <div class="view-toggle" id="mrTabs" role="group" aria-label="M&amp;R report">
+      <div class="view-toggle hidden" id="mrTabs" role="group" aria-label="M&amp;R report">   <!-- tabs retired: both reports on one page -->
         <button data-tab="inventory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Total Inventory</button>
         <button data-tab="depot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12M7 21v-7h10v7"/></svg>Depot Report</button>
       </div>
@@ -774,9 +774,8 @@
       </div>
       <div class="tbl-wrap"><table class="mr-pivot" id="mrPivot"></table></div>
     </section>
-  </div>
 
-  <div id="mrDepot" class="mr-tab hidden">
+  <div id="mrDepot">   <!-- Depot Report, on the same page under Total Inventory -->
     <section class="card panel">
       <div class="tools" style="justify-content:space-between">
         <div><h2>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
@@ -788,6 +787,7 @@
       </div>
       <div class="tbl-wrap" style="max-height:640px"><table class="mr-depot" id="mrDepotTable"></table></div>
     </section>
+  </div>
   </div>
 </main>
 
@@ -2129,14 +2129,13 @@ $("mrTabs").onclick = (e) => { const b = e.target.closest("button[data-tab]"); i
 
 function renderMr() {
   if (!mr.data) return;
-  for (const b of $("mrTabs").children) b.setAttribute("aria-pressed", b.dataset.tab === mr.tab);
-  $("mrInventory").classList.toggle("hidden", mr.tab !== "inventory");
-  $("mrDepot").classList.toggle("hidden", mr.tab !== "depot");
-  $("mrTitle").textContent = mr.tab === "depot" ? "Depot Report" : "Total Inventory";
+  // Total Inventory and the Depot Report are shown together on one page
+  $("mrTitle").textContent = "M&R Operations";
   const synced = mr.data.lastSync ? new Date(mr.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
   $("mrSub").textContent = `Latest movement per tank · ${n0(mr.data.offHire || 0)} off-hired tanks excluded · movements up to ${mr.data.dataTo ? shortDate(mr.data.dataTo) : "—"} · synced ${synced}`;
   $("mrSub").title = $("mrSub").textContent;
-  if (mr.tab === "depot") renderDepot(); else renderInventory();
+  renderInventory();
+  renderDepot();
 }
 
 // ---- Total Inventory

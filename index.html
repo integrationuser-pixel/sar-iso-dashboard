@@ -686,7 +686,7 @@
   <div id="generalCharts">   <!-- Agent Detail / Trade Lane Detail chart view (not shown for Billing Details) -->
   <div class="row" id="laneMixRow">
     <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">All lanes (origin → destination country), excludes sundry and no-BL entries</p><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
-    <section class="card panel"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
+    <section class="card panel" id="mixCard"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
   </div>
   <div class="row rev" id="agentTrendRow">
     <section class="card panel"><h2>Top Agents</h2><p class="sub">Top 10 billing parties by net revenue</p><div class="chart" id="agentChartBox"><canvas id="agentChart"></canvas></div></section>
@@ -1467,24 +1467,28 @@ function render() {
   $("basketCharts").classList.toggle("hidden", !chart || state.detail !== "billing");
   if (chart && state.detail === "billing") renderBasketCharts(lines);
   $("generalCharts").classList.toggle("hidden", state.detail === "billing");
-  // Agent Detail's chart view shows Top Agents only; Trade Lane Detail keeps all four charts
-  const agentOnly = state.detail === "agent";
+  // Chart view: Agent Detail shows Top Agents only, Trade Lane Detail shows Revenue by Trade Lane only (each full width)
+  const agentOnly = state.detail === "agent", laneOnly = state.detail === "lane";
   $("laneMixRow").classList.toggle("hidden", agentOnly);
+  $("mixCard").classList.toggle("hidden", laneOnly);
+  $("laneMixRow").classList.toggle("solo", laneOnly);
+  $("agentTrendRow").classList.toggle("hidden", laneOnly);
   $("trendCard").classList.toggle("hidden", agentOnly);
   $("agentTrendRow").classList.toggle("solo", agentOnly);
   $("agentChartBox").style.height = agentOnly ? "560px" : "";   // bigger when it is the only chart
   if (chart && state.detail !== "billing") {
-    renderBar("agentChart", topBy(lines, (l) => l.agent), (name) => openDrill({ title: `Agent: ${name}`, agent: name }), agentOnly ? 40 : 20);
-    if (agentOnly) {   // larger chart: thicker bars and bigger labels
-      const c = charts.agentChart; c.data.datasets[0].maxBarThickness = 40; c.options.scales.y.ticks.font.size = 13; c.update();
+    if (!laneOnly) {
+      renderBar("agentChart", topBy(lines, (l) => l.agent), (name) => openDrill({ title: `Agent: ${name}`, agent: name }), agentOnly ? 40 : 20);
+      if (agentOnly) {   // larger chart: thicker bars and bigger labels
+        const c = charts.agentChart; c.data.datasets[0].maxBarThickness = 40; c.options.scales.y.ticks.font.size = 13; c.update();
+      }
     }
     if (!agentOnly) {
       const lanes = topBy(lines, laneOf, Infinity);
       $("laneChartBox").style.height = `${Math.max(340, lanes.length * 24 + 40)}px`;   // room for every lane
       renderBar("laneChart", lanes, (name) => openDrill({ title: `Trade Lane: ${name}`, lane: name }), 44);
-      renderMix(k.byCat);
-      renderTrend(lines);
     }
+    if (!agentOnly && !laneOnly) { renderMix(k.byCat); renderTrend(lines); }
   } else {
     renderTable();
   }

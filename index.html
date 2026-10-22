@@ -49,7 +49,8 @@
   .side nav .chev-btn:hover { background: rgb(255 255 255 / .12); }
   .side nav .chev { width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); opacity: .6; transition: transform .15s; }
   .side nav a[aria-expanded="true"] .chev { transform: rotate(45deg); }
-  .side nav a.sub { padding: 6px 10px 6px 35px; font-size: 12px; font-weight: 500; color: #9AB0D4; }
+  .side nav a.sub svg { width: 14px; height: 14px; }
+  .side nav a.sub { padding: 6px 10px 6px 26px; font-size: 12px; font-weight: 500; color: #9AB0D4; }
   .side nav a.sub[aria-current="true"] { background: rgb(255 255 255 / .08); color: #fff; font-weight: 600; }
   .side nav a[aria-current="page"]::before { content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: #fff; }
   .side .bottom { margin-top: auto; padding: 14px 18px 18px; border-top: 1px solid rgb(255 255 255 / .12); font-size: 11.5px; color: #8CA0C4; }
@@ -513,9 +514,9 @@
       Performance<span class="chev-btn" role="button" tabindex="0" aria-label="Show or hide the Performance reports" title="Show / hide"><span class="chev" aria-hidden="true"></span></span>
     </a>
     <div class="subnav hidden" id="perfSub">
-      <a href="/" class="sub" data-page="sales" data-detail="billing">Billing Details</a>
-      <a href="/" class="sub" data-page="sales" data-detail="agent">Agent Detail</a>
-      <a href="/" class="sub" data-page="sales" data-detail="lane">Trade Lane Detail</a>
+      <a href="/" class="sub" data-page="sales" data-detail="billing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h7M9 17h7"/></svg>Billing Details</a>
+      <a href="/" class="sub" data-page="sales" data-detail="agent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/></svg>Agent Detail</a>
+      <a href="/" class="sub" data-page="sales" data-detail="lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="6" r="2.5"/><path d="M7.5 18H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7.5"/></svg>Trade Lane Detail</a>
     </div>
     <a href="/" data-page="mr">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>

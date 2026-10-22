@@ -684,7 +684,7 @@
       <section class="card panel"><h2>Basket Share</h2><p class="sub">Net revenue by basket for the selected period — click a bar for the invoices</p><div class="chart" style="height:300px"><canvas id="bkShareChart"></canvas></div></section>
       <section class="card panel"><h2>Change by Basket</h2><p class="sub" id="bkChangeSub"></p><div class="chart" style="height:300px"><canvas id="bkChangeChart"></canvas></div></section>
     </div>
-    <section class="card panel"><h2>Top Charges</h2><p class="sub">Every charge by net revenue, coloured by its basket — click a bar for the invoices</p><div class="chart" id="bkChargeBox"><canvas id="bkChargeChart"></canvas></div><div class="legend" id="bkLegend"></div></section>
+    <section class="card panel"><h2>Top Charges</h2><p class="sub">Every charge by net revenue (hover for its basket) — click a bar for the invoices</p><div class="chart" id="bkChargeBox"><canvas id="bkChargeChart"></canvas></div></section>
   </div>
   <div class="row">
     <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">All lanes (origin → destination country), excludes sundry and no-BL entries</p><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
@@ -1541,7 +1541,9 @@ function renderBar(id, data, onClick, maxLabel = 30) {
 }
 
 // ---- Billing Details charts by charge basket (chargeMappings.basket, from the "Syscon Charges" sheet)
-const BASKET_COLORS = ["#C2410C", "#2563EB", "#0F766E", "#7C3AED", "#D97706", "#64748B", "#94A3B8"];
+// One colour (the dashboard blue); the stacked chart uses shades of it so the baskets stay apart.
+const CHART_BLUE = "#2563EB";
+const BASKET_COLORS = ["#1E3A8A", "#1D4ED8", "#2563EB", "#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE"];
 const basketNo = (b) => (/^\d+/.test(b) ? +b.match(/^\d+/)[0] : 99);
 const basketColor = (b) => BASKET_COLORS[Math.min(basketNo(b), 7) - 1] || BASKET_COLORS[6];
 const yMoney = { ticks: { callback: (v) => moneyShort(state.currency === "INR" ? v / state.rate : v) }, grid: { color: "#e2e8f0" } };
@@ -1586,7 +1588,7 @@ function renderBasketCharts(lines) {
   charts.bkShare?.destroy();
   charts.bkShare = new Chart($("bkShareChart"), {
     type: "bar",
-    data: { labels: share.map((d) => d.name), datasets: [{ data: share.map((d) => conv(d.value)), backgroundColor: share.map((d) => basketColor(d.name)), borderRadius: 4, maxBarThickness: 28 }] },
+    data: { labels: share.map((d) => d.name), datasets: [{ data: share.map((d) => conv(d.value)), backgroundColor: CHART_BLUE, borderRadius: 4, maxBarThickness: 28 }] },
     options: {
       indexAxis: "y", maintainAspectRatio: false, animation: false, layout: { padding: { right: 96 } },
       scales: { x: yMoney, y: { grid: { display: false }, ticks: { color: "#334155", font: { size: 11 } } } },
@@ -1601,12 +1603,12 @@ function renderBasketCharts(lines) {
   const withData = buckets.filter((b, i) => totals[i]);
   const [prev, last] = withData.slice(-2);
   const delta = baskets.map((bk) => ({ name: bk, value: last && prev ? (cell.get(`${bk}|${last}`) || 0) - (cell.get(`${bk}|${prev}`) || 0) : 0 }));
-  $("bkChangeSub").textContent = last && prev ? `${bucketLabel(last, gr)} vs ${bucketLabel(prev, gr)} — net revenue up (green) or down (red) by basket`
+  $("bkChangeSub").textContent = last && prev ? `${bucketLabel(last, gr)} vs ${bucketLabel(prev, gr)} — net revenue up (right) or down (left) by basket`
     : `Needs two ${per}s with billing in the selected period`;
   charts.bkChange?.destroy();
   charts.bkChange = new Chart($("bkChangeChart"), {
     type: "bar",
-    data: { labels: delta.map((d) => d.name), datasets: [{ data: delta.map((d) => conv(d.value)), backgroundColor: delta.map((d) => (d.value < 0 ? "#DC2626" : "#16A34A")), borderRadius: 4, maxBarThickness: 28 }] },
+    data: { labels: delta.map((d) => d.name), datasets: [{ data: delta.map((d) => conv(d.value)), backgroundColor: CHART_BLUE, borderRadius: 4, maxBarThickness: 28 }] },
     options: {
       indexAxis: "y", maintainAspectRatio: false, animation: false, layout: { padding: { right: 70, left: 10 } },
       scales: { x: yMoney, y: { grid: { display: false }, ticks: { color: "#334155", font: { size: 11 } } } },
@@ -1624,7 +1626,7 @@ function renderBasketCharts(lines) {
   charts.bkCharge?.destroy();
   charts.bkCharge = new Chart($("bkChargeChart"), {
     type: "bar",
-    data: { labels: ch.map((d) => d.name), datasets: [{ data: ch.map((d) => conv(d.value)), backgroundColor: ch.map((d) => basketColor(d.basket)), borderRadius: 4, maxBarThickness: 22 }] },
+    data: { labels: ch.map((d) => d.name), datasets: [{ data: ch.map((d) => conv(d.value)), backgroundColor: CHART_BLUE, borderRadius: 4, maxBarThickness: 22 }] },
     options: {
       indexAxis: "y", maintainAspectRatio: false, animation: false, layout: { padding: { right: 62 } },
       scales: { x: yMoney, y: { grid: { display: false }, afterFit: (ax) => { ax.width = Math.max(ax.width, 260); }, ticks: { color: "#334155", font: { size: 11 } } } },
@@ -1634,7 +1636,6 @@ function renderBasketCharts(lines) {
       onHover: hover,
     },
   });
-  $("bkLegend").innerHTML = baskets.map((bk) => `<span class="lg"><span class="dot" style="background:${basketColor(bk)}"></span>${esc(bk)}</span>`).join("");
 }
 
 function renderMix(byCat) {

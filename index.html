@@ -677,10 +677,10 @@
 
   <div id="chartView" class="hidden">
   <div id="basketCharts" class="hidden">
-    <section class="card panel"><h2>Revenue by Basket</h2><p class="sub" id="bkStackSub">Net revenue per month, stacked by charge basket — click a bar segment for the invoices</p>
+    <section class="card panel"><h2>Revenue by Basket</h2><p class="sub" id="bkStackSub">Net revenue per month by charge basket — click a point for the invoices</p>
       <div class="chart" style="height:380px"><canvas id="bkStackChart"></canvas></div></section>
-    <section class="card panel"><h2>Basket Share</h2><p class="sub">Net revenue by basket for the selected period — click a bar for the invoices</p><div class="chart" style="height:300px"><canvas id="bkShareChart"></canvas></div></section>
-    <section class="card panel"><h2>Top Charges</h2><p class="sub">Every charge by net revenue (hover for its basket) — click a bar for the invoices</p><div class="chart" id="bkChargeBox"><canvas id="bkChargeChart"></canvas></div></section>
+    <section class="card panel"><h2>Basket Share</h2><p class="sub">Net revenue by basket for the selected period, largest first — click a bar for the invoices</p><div class="chart" style="height:300px"><canvas id="bkShareChart"></canvas></div></section>
+    <section class="card panel"><h2>Top 5 Charges</h2><p class="sub">The 5 charges with the most net revenue (hover for its basket) — click a bar for the invoices</p><div class="chart" id="bkChargeBox" style="height:260px"><canvas id="bkChargeChart"></canvas></div></section>
   </div>
   <div id="generalCharts">   <!-- Agent Detail / Trade Lane Detail chart view (not shown for Billing Details) -->
   <div class="row">
@@ -1558,31 +1558,28 @@ function renderBasketCharts(lines) {
   const per = gr === "week" ? "week" : gr === "day" ? "day" : "month";
   const hover = (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; };
 
-  // 1. stacked bars: basket per month / week
-  $("bkStackSub").textContent = `Net revenue per ${per}, stacked by charge basket — click a bar segment for the invoices`;
-  const totals = buckets.map((b) => baskets.reduce((s, bk) => s + (cell.get(`${bk}|${b}`) || 0), 0));
+  // 1. one line per basket across the months / weeks
+  $("bkStackSub").textContent = `Net revenue per ${per} by charge basket — click a point for the invoices`;
   charts.bkStack?.destroy();
   charts.bkStack = new Chart($("bkStackChart"), {
-    type: "bar",
-    data: { labels: buckets.map((b) => bucketLabel(b, gr)), datasets: baskets.map((bk) => ({ label: bk, data: buckets.map((b) => conv(cell.get(`${bk}|${b}`) || 0)),
-      backgroundColor: basketColor(bk), stack: "s", maxBarThickness: 56 })).concat([{ type: "line", label: "Total", data: totals.map(conv), stack: "total",
-      showLine: false, pointRadius: 0, pointHitRadius: 0, borderColor: "transparent", backgroundColor: "transparent" }]) },
+    type: "line",
+    data: { labels: buckets.map((b) => bucketLabel(b, gr)), datasets: baskets.map((bk) => ({ label: bk,
+      data: buckets.map((b) => (baskets.some((x) => cell.has(`${x}|${b}`)) ? conv(cell.get(`${bk}|${b}`) || 0) : null)),   // months with no billing at all stay blank
+      borderColor: basketColor(bk), backgroundColor: basketColor(bk), borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0.25 })) },
     options: {
-      maintainAspectRatio: false, animation: false, layout: { padding: { top: 20 } },
-      scales: { x: { stacked: true, grid: { display: false } }, y: { ...yMoney, stacked: true } },
-      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10, filter: (it) => it.text !== "Total" } },
-                 tooltip: { mode: "index", intersect: false, filter: (it) => it.datasetIndex < baskets.length,
-                   callbacks: { label: (c) => `${c.dataset.label}: ${money(cell.get(`${baskets[c.datasetIndex]}|${buckets[c.dataIndex]}`) || 0)}`,
-                   footer: (items) => `Total: ${money(totals[items[0].dataIndex])}` } },
-                 valueLabels: { datasets: [baskets.length], format: (_, i) => (totals[i] ? moneyShort(totals[i]) : "") } },
-      onClick: (_, els) => { if (!els[0] || els[0].datasetIndex >= baskets.length) return; const bk = baskets[els[0].datasetIndex], b = buckets[els[0].index];
+      maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, layout: { padding: { top: 18, right: 12 } },
+      scales: { x: { grid: { display: false } }, y: yMoney },
+      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10 } },
+                 tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${money(cell.get(`${baskets[c.datasetIndex]}|${buckets[c.dataIndex]}`) || 0)}` } },
+                 valueLabels: buckets.length <= 12 ? { format: (_, i, di) => { const v = cell.get(`${baskets[di]}|${buckets[i]}`) || 0; return Math.abs(v) >= 20000 ? moneyShort(v) : ""; } } : undefined },
+      onClick: (_, els) => { if (!els[0]) return; const bk = baskets[els[0].datasetIndex], b = buckets[els[0].index];
         openDrill({ title: `${bk} — ${bucketLabel(b, gr)}`, basket: bk, ...bucketSpan(b) }); },
       onHover: hover,
     },
   });
 
   // 2. basket share
-  const share = baskets.map((bk) => ({ name: bk, value: byBasket.get(bk) || 0 }));
+  const share = baskets.map((bk) => ({ name: bk, value: byBasket.get(bk) || 0 })).sort((a, b) => b.value - a.value);   // largest first
   const sTot = share.reduce((s, d) => s + d.value, 0);
   charts.bkShare?.destroy();
   charts.bkShare = new Chart($("bkShareChart"), {
@@ -1599,8 +1596,7 @@ function renderBasketCharts(lines) {
   });
 
   // 3. every charge
-  const ch = [...byCharge.values()].sort((a, b) => b.value - a.value);
-  $("bkChargeBox").style.height = `${Math.max(300, ch.length * 24 + 40)}px`;
+  const ch = [...byCharge.values()].sort((a, b) => b.value - a.value).slice(0, 5);   // top 5
   charts.bkCharge?.destroy();
   charts.bkCharge = new Chart($("bkChargeChart"), {
     type: "bar",

@@ -258,9 +258,23 @@
   .modal td.amt, .modal th.amt { text-align: right; }
   .modal td:first-child, .modal th:first-child { position: static; }
   .modal tr.colf th { padding: 4px 6px; border-bottom: 1px solid var(--line); background: var(--card); }
-  .modal tr.colf input { width: 100%; min-width: 64px; height: 26px; padding: 0 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
-    font: inherit; font-size: 11.5px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--ink); }
-  .modal tr.colf input:focus { outline: none; border-color: var(--accent); background: #fff; }
+  .cf-btn { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-width: 70px; height: 26px; padding: 0 8px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--paper); font: inherit; font-size: 11.5px; font-weight: 500; text-transform: none;
+    letter-spacing: 0; color: var(--ink-soft); cursor: pointer; white-space: nowrap; }
+  .cf-btn:hover { border-color: var(--accent); }
+  .cf-btn.on { border-color: var(--accent); background: #EFF4FF; color: var(--accent-dark); font-weight: 700; }
+  .cf-panel { position: fixed; z-index: 1000; width: 280px; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 12px 32px rgb(15 42 77 / .2); }
+  .cf-panel.hidden { display: none; }
+  .cf-panel .cf-search { width: 100%; height: 30px; padding: 0 10px; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: 12px; }
+  .cf-panel label { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-radius: 5px; font-size: 12px; cursor: pointer; }
+  .cf-panel label:hover { background: var(--paper); }
+  .cf-panel label span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cf-panel label i { font-style: normal; font-size: 11px; color: var(--ink-soft); }
+  .cf-panel input[type=checkbox] { accent-color: var(--accent); }
+  .cf-all { border-bottom: 1px solid var(--line); border-radius: 0 !important; margin-bottom: 4px; }
+  .cf-list { max-height: 240px; overflow: auto; }
+  .cf-more { padding: 6px 4px; font-size: 11px; color: var(--ink-soft); }
+  .cf-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
   .pill { font-family: "Plus Jakarta Sans", sans-serif; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #E3EBFD; color: #3255B5; }
   .pill.cn { background: #FDE3DE; color: #C24A2E; } .pill.dn { background: #FEF3C7; color: #92700C; }
 
@@ -954,37 +968,93 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-// ---- column filters for the drill-down pop-ups: a box under each heading; a row stays when every filled box
-// matches its cell (text: contains; numbers also take >, <, >=, <= e.g. ">1000").
-const colFilters = {}, colFilterRender = {};   // table id -> [text per column] / re-render function
+// ---- column filters for the drill-down pop-ups: a ▾ button under each heading opens a checkbox list of that
+// column's values (like Excel). A row stays when its value is ticked in every filtered column.
+const colFilters = {}, colFilterRender = {}, colFilterLast = {};   // table id -> [Set of kept values | null] / re-render / last rows + getters
+const cfKey = (v) => (v == null || v === "" ? "" : typeof v === "number" ? String(Math.round(v * 100) / 100) : String(v));
+const cfLabel = (k) => (k === "" ? "(Blanks)" : /^\d{4}-\d{2}-\d{2}$/.test(k) ? shortDate(k) : /^-?\d+(\.\d+)?$/.test(k) ? (+k).toLocaleString("en-US", { maximumFractionDigits: 2 }) : k);
 function colFilterRow(id, n, skip = []) {
   const f = colFilters[id] || (colFilters[id] = []);
   return `<tr class="colf">${Array.from({ length: n }, (_, i) => `<th>${skip.includes(i) ? ""
-    : `<input data-cf="${id}" data-i="${i}" value="${esc(f[i] || "")}" placeholder="Filter" aria-label="Filter this column" autocomplete="off">`}</th>`).join("")}</tr>`;
+    : `<button type="button" class="cf-btn${f[i] ? " on" : ""}" data-cf="${id}" data-i="${i}" aria-haspopup="true">${f[i] ? `${n0(f[i].size)} selected` : "All"}<span aria-hidden="true">▾</span></button>`}</th>`).join("")}</tr>`;
 }
 function colFilterApply(id, rows, getters) {
-  const qs = (colFilters[id] || []).map((v) => (v || "").trim().toLowerCase());
-  if (!qs.some(Boolean)) return rows;
-  const test = (v, q) => {
-    const m = typeof v === "number" && q.match(/^(>=|<=|>|<|=)\s*(-?[\d,.]+)$/);
-    if (m) { const x = +m[2].replace(/,/g, ""); return m[1] === ">" ? v > x : m[1] === "<" ? v < x : m[1] === ">=" ? v >= x : m[1] === "<=" ? v <= x : Math.round(v) === x; }
-    return String(typeof v === "number" ? Math.round(v * 100) / 100 : v ?? "").toLowerCase().includes(q);
-  };
-  return rows.filter((r) => getters.every((g, i) => !qs[i] || !g || test(g(r), qs[i])));
+  colFilterLast[id] = { rows, getters };
+  const f = colFilters[id] || [];
+  if (!f.some(Boolean)) return rows;
+  return rows.filter((r) => getters.every((g, i) => !f[i] || !g || f[i].has(cfKey(g(r)))));
 }
-function colFilterReset(id) { colFilters[id] = []; }
+function colFilterReset(id) { colFilters[id] = []; cfClose(); }
 function colFilterStick(table) {   // second header row (the filters) stays under the first while scrolling
   const hr = table.tHead?.rows; if (!hr || hr.length < 2) return;
   const h = hr[0].getBoundingClientRect().height; for (const th of hr[1].cells) th.style.top = `${h}px`;
 }
-document.addEventListener("input", (e) => {
-  const inp = e.target.closest?.("input[data-cf]"); if (!inp) return;
-  const id = inp.dataset.cf, i = inp.dataset.i;
-  (colFilters[id] || (colFilters[id] = []))[+i] = inp.value;
-  colFilterRender[id]?.();
-  const again = document.querySelector(`input[data-cf="${id}"][data-i="${i}"]`);
-  if (again && again !== document.activeElement) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+// the drop-down panel (one, shared)
+const cf = { id: null, i: null, q: "" };
+const cfPanel = document.createElement("div");
+cfPanel.className = "cf-panel hidden"; cfPanel.setAttribute("role", "dialog"); cfPanel.setAttribute("aria-label", "Filter column");
+cfPanel.innerHTML = `<input class="cf-search" placeholder="Search…" aria-label="Search values"><label class="cf-all"><input type="checkbox"> <b>Select all</b></label>
+  <div class="cf-list"></div><div class="cf-actions"><button type="button" class="btn" data-cfa="clear">Clear filter</button><button type="button" class="btn-primary" data-cfa="close">Done</button></div>`;
+document.body.appendChild(cfPanel);
+function cfValues() {   // values of this column among rows that pass the other columns' filters
+  const { rows = [], getters = [] } = colFilterLast[cf.id] || {}, f = colFilters[cf.id] || [], g = getters[cf.i];
+  const keep = rows.filter((r) => getters.every((gg, j) => j === cf.i || !f[j] || !gg || f[j].has(cfKey(gg(r)))));
+  const counts = new Map(); for (const r of keep) { const k = cfKey(g(r)); counts.set(k, (counts.get(k) || 0) + 1); }
+  const num = [...counts.keys()].every((k) => k === "" || /^-?\d+(\.\d+)?$/.test(k));
+  return [...counts].sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : num ? +a - +b : a.localeCompare(b, undefined, { numeric: true })));
+}
+function cfRender() {
+  const vals = cfValues(), sel = colFilters[cf.id]?.[cf.i], q = cf.q.toLowerCase();
+  const shown = vals.filter(([k]) => !q || cfLabel(k).toLowerCase().includes(q));
+  const on = (k) => !sel || sel.has(k);
+  cfPanel.querySelector(".cf-all input").checked = shown.length > 0 && shown.every(([k]) => on(k));
+  cfPanel.querySelector(".cf-list").innerHTML = shown.slice(0, 1000).map(([k, n]) =>
+    `<label><input type="checkbox" value="${esc(k)}"${on(k) ? " checked" : ""}><span>${esc(cfLabel(k))}</span><i>${n0(n)}</i></label>`).join("")
+    + (shown.length > 1000 ? `<div class="cf-more">${n0(shown.length - 1000)} more — type to narrow</div>` : "") || '<div class="cf-more">No values</div>';
+}
+function cfSet(next) {   // next: Set of kept values, or null for no filter
+  const f = colFilters[cf.id] || (colFilters[cf.id] = []);
+  f[cf.i] = next && !cfValues().every(([k]) => next.has(k)) ? next : null;   // everything ticked = no filter
+  colFilterRender[cf.id]?.(); cfRender();
+  const btn = document.querySelector(`.cf-btn[data-cf="${cf.id}"][data-i="${cf.i}"]`); if (btn) cfPlace(btn);
+}
+function cfPlace(btn) {
+  const r = btn.getBoundingClientRect(), w = 280;
+  cfPanel.style.left = `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`;
+  cfPanel.style.top = `${Math.min(r.bottom + 4, innerHeight - 360)}px`;
+}
+function cfOpen(btn) {
+  Object.assign(cf, { id: btn.dataset.cf, i: +btn.dataset.i, q: "" });
+  cfPanel.querySelector(".cf-search").value = "";
+  cfPanel.classList.remove("hidden"); cfPlace(btn); cfRender(); cfPanel.querySelector(".cf-search").focus();
+}
+function cfClose() { cfPanel.classList.add("hidden"); cf.id = null; }
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest?.(".cf-btn");
+  if (btn) { e.stopPropagation(); if (cf.id === btn.dataset.cf && cf.i === +btn.dataset.i) cfClose(); else cfOpen(btn); return; }
+  if (!cfPanel.classList.contains("hidden") && !cfPanel.contains(e.target)) cfClose();
+}, true);
+cfPanel.addEventListener("input", (e) => { if (e.target.classList.contains("cf-search")) { cf.q = e.target.value; cfRender(); } });
+cfPanel.addEventListener("change", (e) => {
+  const box = e.target; if (box.type !== "checkbox") return;
+  const vals = cfValues().map(([k]) => k), cur = new Set(colFilters[cf.id]?.[cf.i] || vals), q = cf.q.toLowerCase();
+  if (box.closest(".cf-all")) {   // with a search typed, Select all keeps just the matching values (as in Excel)
+    const hits = vals.filter((k) => !q || cfLabel(k).toLowerCase().includes(q));
+    if (q && box.checked) return cfSet(new Set(hits));
+    for (const k of hits) box.checked ? cur.add(k) : cur.delete(k);
+  }
+  else box.checked ? cur.add(box.value) : cur.delete(box.value);
+  cfSet(cur);
 });
+cfPanel.addEventListener("click", (e) => {
+  const a = e.target.closest("[data-cfa]")?.dataset.cfa; if (!a) return;
+  if (a === "clear") cfSet(null); else cfClose();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !cfPanel.classList.contains("hidden")) { e.stopImmediatePropagation(); cfClose(); } }, true);
+document.addEventListener("scroll", (e) => {   // keep the panel under its button while the table scrolls
+  if (!cf.id || cfPanel.contains(e.target)) return;
+  const btn = document.querySelector(`.cf-btn[data-cf="${cf.id}"][data-i="${cf.i}"]`); if (btn) cfPlace(btn); else cfClose();
+}, true);
 
 const CAT_COLORS = { Lease: "#2563eb", Detention: "#d97706", EXIM: "#059669", "M&R": "#7c3aed", Other: "#64748b" };
 // Charges outside Lease / Detention / EXIM / M&R are shown under their own name (KPI card, mix, trend), not lumped into "Other".
@@ -1770,7 +1840,7 @@ function openDrill(f) {
   state.drill = { from: state.from, to: state.to, ...f }; state.drillQ = ""; state.drillLimit = 200; colFilterReset("mTable");
   $("mSearch").value = ""; $("overlay").classList.remove("hidden"); renderDrill(); $("mSearch").focus();
 }
-const DRILL_COLS = [(l) => `${shortDate(l.date)} ${l.date}`, (l) => l.invoiceNo, (l) => l.docType, (l) => l.agent, (l) => l.lane || "", (l) => l.charge,
+const DRILL_COLS = [(l) => l.date, (l) => l.invoiceNo, (l) => l.docType, (l) => l.agent, (l) => l.lane || "", (l) => l.charge,
   (l) => catLabel(catOf(l)), (l) => l.blNo, (l) => l.amount];
 function drillRows() {
   const f = state.drill, q = state.drillQ.toLowerCase();
@@ -2089,13 +2159,14 @@ function openTanks(f) {
   mr.drill = f; mr.drillQ = ""; $("tSearch").value = ""; colFilterReset("tTable");
   $("mrOverlay").classList.remove("hidden"); renderTanks(); $("tSearch").focus();
 }
-const TANK_COLS = [(t) => t.c, (t) => [t.size, t.type].filter(Boolean).join(" "), (t) => t.principal, (t) => t.activity, (t) => (t.date ? `${shortDate(t.date)} ${t.date}` : ""),
+const TANK_COLS = [(t) => t.c, (t) => [t.size, t.type].filter(Boolean).join(" "), (t) => t.principal, (t) => t.activity, (t) => t.date || "",
   (t) => idleDays(t) ?? "", (t) => t.agent, (t) => t.from, (t) => t.to, (t) => t.exportBl || t.importBl || t.jobNo];
 function tankRows() {
   const q = mr.drillQ.toLowerCase();
-  return (mr.drill.allPrincipals ? mr.data.tanks : mrTanks()).filter((t) => tankMatches(t, mr.drill))
+  const list = (mr.drill.allPrincipals ? mr.data.tanks : mrTanks()).filter((t) => tankMatches(t, mr.drill))
     .filter((t) => !q || [t.c, t.type, t.principal, t.activity, t.agent, t.from, t.to, t.jobNo, t.importBl, t.exportBl].some((v) => (v || "").toLowerCase().includes(q)))
-    .filter((t) => colFilterApply("tTable", [t], TANK_COLS).length)
+    .filter(Boolean);
+  return colFilterApply("tTable", list, TANK_COLS)
     .sort((a, b) => (idleDays(b) ?? -1) - (idleDays(a) ?? -1) || a.c.localeCompare(b.c));
 }
 function renderTanks() {
@@ -2443,10 +2514,9 @@ $("depXlsx").onclick = () => {
 function openBls(title, pred) { dep.drill = { title, pred }; dep.drillQ = ""; colFilterReset("bTable"); $("bSearch").value = ""; $("depOverlay").classList.remove("hidden"); renderBls(); $("bSearch").focus(); }
 function blRows() {
   const q = dep.drillQ.toLowerCase();
-  return depInRange().filter(dep.drill.pred)
-    .filter((x) => !q || [x.bl, x.shipper, x.plrAgent, x.pol, x.pod, x.consignee, x.tanks.join(" ")].some((v) => v.toLowerCase().includes(q)))
-    .filter((x) => colFilterApply("bTable", [x], [(b) => b.bl, (b) => `${shortDate(b.date)} ${b.date}`, (b) => b.shipper, (b) => b.plrAgent, (b) => b.pol, (b) => b.pod,
-      (b) => b.tanks.length, (b) => b.tanks.join(", ")]).length);
+  const list = depInRange().filter(dep.drill.pred)
+    .filter((x) => !q || [x.bl, x.shipper, x.plrAgent, x.pol, x.pod, x.consignee, x.tanks.join(" ")].some((v) => v.toLowerCase().includes(q)));
+  return colFilterApply("bTable", list, [(b) => b.bl, (b) => b.date, (b) => b.shipper, (b) => b.plrAgent, (b) => b.pol, (b) => b.pod, (b) => b.tanks.length, (b) => b.tanks.join(", ")]);
 }
 function renderBls() {
   const rows = blRows(), tanks = rows.reduce((a, x) => a + x.tanks.length, 0), dash = '<span class="dash">—</span>';
@@ -2668,7 +2738,7 @@ function openFinDocs(title, pred) { fin.drill = { title, pred }; fin.drillQ = ""
 function finDocRows() {
   const q = fin.drillQ.toLowerCase();
   const ap = fin.side === "ap";
-  const cols = [(d) => d.ref, ...(ap ? [(d) => d.invoiceNo] : []), (d) => d.party, (d) => `${shortDate(d.date)} ${d.date}`, (d) => `${shortDate(d.due)} ${d.due}`,
+  const cols = [(d) => d.ref, ...(ap ? [(d) => d.invoiceNo] : []), (d) => d.party, (d) => d.date, (d) => d.due,
     (d) => overdueDays(d), (d) => d.amount, (d) => d.adjusted, (d) => d.outstanding, (d) => d.bl];
   return colFilterApply("fTable", finDocs().filter(fin.drill.pred).filter((d) => !q || [d.ref, d.invoiceNo, d.party, d.bl, d.job].some((v) => (v || "").toLowerCase().includes(q))), cols)
     .sort((a, b) => overdueDays(b) - overdueDays(a));

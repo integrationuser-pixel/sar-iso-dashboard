@@ -218,7 +218,7 @@
   .pivot tr.lv0 td { font-weight: 700; font-size: 13px; }
   .pivot tbody tr.bk { background: #F4F7FD; }
   #detailTable:not(.pivot) th.gt { background: #E4EBFA; color: var(--ink); }
-  /* Trade Lane Detail: Trade Lane and Grand Total stay frozen while the month columns scroll */
+  /* Agent Detail / Trade Lane Detail: the name and Grand Total columns stay frozen while the month columns scroll */
   #detailTable.lanes tr > :nth-child(1) { box-sizing: border-box; width: 320px; min-width: 320px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
   #detailTable.lanes tr > :nth-child(2) { position: sticky; left: 320px; z-index: 2; box-shadow: inset -1px 0 0 var(--line); }
   #detailTable.lanes tbody tr > td:nth-child(1) { background: inherit; }
@@ -1754,11 +1754,11 @@ function renderTable() {
   $("detailCount").textContent = `${filtered.length} ${dim.toLowerCase()}s`;
   const cell = (v, name, b) => `<td>${v ? `<button class="num${v < 0 ? " neg" : ""}" data-n="${esc(name ?? "")}" data-b="${b ?? ""}">${money(v)}</button>` : '<span class="dash">–</span>'}</td>`;
   const rowName = (r) => (r.others ? "__others" : r.name);
-  // Trade Lane Detail puts Grand Total right after the lane; Agent Detail keeps Total at the end
-  const gtFirst = !isAgent;
+  // Agent Detail and Trade Lane Detail put Grand Total right after the name column
+  const gtFirst = true;
   const row = (cells, total, mk) => { const gt = mk(total, "").replace("<td>", '<td class="gt">');
     return (gtFirst ? gt : "") + buckets.map((b) => mk(cells[b], b)).join("") + (gtFirst ? "" : mk(total, "")); };
-  $("detailTable").className = isAgent ? "" : "lanes";   // Trade Lane Detail: lane + Grand Total columns frozen
+  $("detailTable").className = "lanes";   // name + Grand Total columns frozen (Agent Detail and Trade Lane Detail)
   $("detailTable").innerHTML =
     `<thead><tr><th>${dim}</th>${gtFirst ? '<th class="gt">Grand Total</th>' : ""}${buckets.map((b) => `<th>${bucketLabel(b, gr)}</th>`).join("")}${gtFirst ? "" : "<th>Total</th>"}</tr></thead>
      <tbody>${shown.map((r) => {

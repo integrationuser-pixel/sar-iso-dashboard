@@ -1179,7 +1179,7 @@ const state = {
   mode: "table",   // opens on the Billing Details table; Chart is one click away
   currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
   detail: "billing", detailQ: "", detailAll: false,   // Performance opens on Billing Details
-  charges: new Set(DEFAULT_CHARGES), drill: null, drillQ: "", drillLimit: 200,
+  charges: new Set(), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
 
@@ -1341,9 +1341,11 @@ async function loadData(withUser) {
     if (me && !me.ok) throw new Error(me.error);
     if (!sales.ok) throw new Error(sales.error);
     if (me) { showUser(me.data); route(); }
-    const first = !state.lines.length;   // the Charges filter starts on the 5 default charges; a refresh keeps the selection
+    // the Charges filter opens on every charge (the "Default" button still picks the 5 main ones); a refresh keeps
+    // the selection, and "all" stays all even when new charges arrive
+    const wasAll = !state.lines.length || allChargesOn();
     state.lines = sales.data.lines; state.lastSync = sales.data.lastSync;
-    if (first) state.charges = new Set(DEFAULT_CHARGES);
+    if (wasAll) state.charges = new Set(allCharges());
     $("dataError").classList.add("hidden");
     showSynced();
     render();

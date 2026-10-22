@@ -229,15 +229,16 @@ async function salesDataset() {
 
 // ---------------------------------------------------------------- M&R Operations dataset
 //
-// One row per tank in the fleet. The fleet is every tank with a container transaction (on hire /
-// sub-lease), which is the 1,028-tank list the old Current Inventory Report sheet used. Each tank's
-// status is its latest tblContainerMovement row (activityDate desc, then containerMovementId desc,
-// rows with a deletedNo left out). Principal is the company on the tank's latest On Hire
+// One row per tank in the fleet. The fleet is every tank in tblContainerMovement whose latest movement
+// (activityDate desc, then containerMovementId desc, rows with a deletedNo left out) is not OFF HIRE —
+// the same list as Syscon's "Current Inventory" report (checked tank by tank: 1,022 = 1,022, 21 Oct 2026).
+// Tanks with a movement but no container transaction (77 on that date) are part of the fleet. Principal is the company on the tank's latest On Hire
 // transaction; older transactions have no company and belong to SAR LOGISOLUTIONS PTE. LTD.
 // (tblContainerRepair.principalName and tblInvoice.principalName are blank for most tanks).
 
 const DEFAULT_PRINCIPAL = "SAR LOGISOLUTIONS PTE. LTD.";
-const MR_SNAPSHOT_ID = "mr-inventory-v2";
+const MR_SNAPSHOT_ID = "mr-inventory-v3";
+const OFF_HIRE_ACTIVITY = "OFF HIRE";
 const MR_SYNC_TABLES = ["tblContainerMovement", "tblContainerTransaction", "tblJob", "tblInvoice"];
 
 /** Status bucket from the activity name (keyword rules from the requirements document). */
@@ -286,9 +287,12 @@ async function buildMr(db, lastSync) {
   const depots = await buildDepots(db);
   const day = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
   const tanks = [];
-  for (const [c, t] of byTank) {
-    const m = move.get(c) || {};
+  let offHire = 0;
+  for (const [c, m] of move) {
+    if (!c) continue;
     const activity = s(m.activity) || "(NO MOVEMENT)";
+    if (activity.toUpperCase() === OFF_HIRE_ACTIVITY) { offHire++; continue; }   // back with the lessor: not in the fleet
+    const t = byTank.get(c) || {};
     tanks.push({
       c, size: s(m.size), type: s(m.type), activity, bucket: mrBucket(activity), date: day(m.date),
       principal: t.on?.company || t.any?.company || DEFAULT_PRINCIPAL,
@@ -300,7 +304,7 @@ async function buildMr(db, lastSync) {
   }
   tanks.sort((a, b) => a.c.localeCompare(b.c));
   const dataTo = latest.reduce((mx, m) => (m.date && +new Date(m.date) > mx ? +new Date(m.date) : mx), 0);
-  return { tanks, depots, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
+  return { tanks, offHire, depots, lastSync, dataTo: dataTo ? day(dataTo) : null, generatedAt: new Date().toISOString() };
 }
 
 // Depot details for the Tank Inventory report, all from SARFD (key = upper-cased depot / location name):

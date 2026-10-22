@@ -322,6 +322,14 @@
   #mrPage { align-content: start; }
   .mr-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .mr-controls select { max-width: 260px; }
+  /* collapsible M&R sections: the arrow before the heading folds the card's body away */
+  .sec-tg { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin: 0 8px 0 -4px; padding: 0; vertical-align: -3px;
+    border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink-soft); cursor: pointer; }
+  .sec-tg:hover { border-color: #6488D6; color: var(--accent); }
+  .sec-tg .chev { width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .15s; }
+  .sec-collapsed .sec-tg .chev { transform: rotate(-45deg); }
+  .sec-collapsed .sec-body, .sec-collapsed .tools .tools { display: none; }
+  .sec-collapsed > .tools { margin-bottom: 0; }
   .mr-tab { display: grid; gap: 20px; animation: viewFadeIn .35s ease both; }
   .mr-tab.hidden { display: none; }
   .kpis.mr-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
@@ -756,7 +764,7 @@
     <!-- Inventory Details: one card with the Table / Chart switch, the export button and the table or chart -->
     <section class="card panel" id="mrDetailsCard">
       <div class="tools" style="justify-content:space-between">
-        <div><h2>Inventory Details</h2><p class="sub" style="margin-bottom:0" id="mrViewSub"></p></div>
+        <div><h2><button type="button" class="sec-tg" data-sec="mrDetailsCard" aria-expanded="true" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Inventory Details</h2><p class="sub" style="margin-bottom:0" id="mrViewSub"></p></div>
         <div class="tools" style="margin:0">
           <button class="btn" id="mrPivotXlsx">Export to Excel</button>
           <div class="view-toggle" id="mrViewToggle" role="group" aria-label="Show as">
@@ -765,21 +773,23 @@
         </div>
         </div>
       </div>
+      <div class="sec-body">
       <div id="mrTableView"><div class="tbl-wrap"><table class="mr-pivot" id="mrPivot"></table></div></div>
       <div id="mrChartView" class="hidden"><div class="chart"><canvas id="mrAgentChart"></canvas></div></div>
+      </div>
     </section>
 
   <div id="mrDepot">   <!-- Depot Report, on the same page under Total Inventory -->
-    <section class="card panel">
+    <section class="card panel" id="mrDepotCard">
       <div class="tools" style="justify-content:space-between">
-        <div><h2>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
+        <div><h2><button type="button" class="sec-tg" data-sec="mrDepotCard" aria-expanded="true" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
         <div class="tools" style="margin:0">
           <input class="search" id="mrDepotSearch" placeholder="Search depot or agent…">
           <button class="btn" id="mrDepotToggleAll">Expand all</button>
           <button class="btn" id="mrDepotXlsx">Export to Excel</button>
         </div>
       </div>
-      <div class="tbl-wrap" style="max-height:640px"><table class="mr-depot" id="mrDepotTable"></table></div>
+      <div class="sec-body"><div class="tbl-wrap" style="max-height:640px"><table class="mr-depot" id="mrDepotTable"></table></div></div>
     </section>
   </div>
   </div>
@@ -2175,6 +2185,13 @@ function renderInventory() {
   });
 
 }
+// collapse / expand a whole M&R section (Inventory Details, Depot Report)
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".sec-tg"); if (!b) return;
+  const card = $(b.dataset.sec), shut = !card.classList.contains("sec-collapsed");
+  card.classList.toggle("sec-collapsed", shut); b.setAttribute("aria-expanded", !shut);
+  if (!shut && card.id === "mrDetailsCard") renderInventory();   // redraw the chart once its box is visible again
+});
 $("mrViewToggle").onclick = (e) => {
   const m = e.target.closest("button[data-mode]")?.dataset.mode;
   if (m && m !== mr.mode) { mr.mode = m; store.set("sar.mrMode", m); renderInventory(); }

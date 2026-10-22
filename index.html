@@ -217,6 +217,10 @@
   .pivot td.gt { background: var(--grand); font-weight: 700; }
   .pivot tr.lv0 td { font-weight: 700; font-size: 13px; }
   .pivot tbody tr.bk { background: #F4F7FD; }
+  #detailTable tr.lane0 td { font-weight: 700; }
+  #detailTable tr.lane0 .tg { margin-right: 8px; }
+  #detailTable tr.lane1 { background: #FCFDFF; }
+  #detailTable tr.lane1 td.name { padding-left: 44px; color: var(--ink-soft); }
   .pivot tr.bk .tg { margin-right: 8px; }
   .pivot tbody tr.lv0 { background: #fff; }
   .pivot tbody tr.lv1 { background: #FCFDFF; }
@@ -1169,7 +1173,7 @@ function trendTable(lines, key, buckets, g) {
   return { rows: [...m.values()].sort((a, b) => b.total - a.total), totals };
 }
 const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || catOf(l) === f.category)
-  && (f.agent === undefined || l.agent === f.agent) && (!f.lane || laneOf(l) === f.lane)
+  && (f.agent === undefined || l.agent === f.agent) && (!f.lane || laneOf(l) === f.lane) && (f.portLane === undefined || l.lane === f.portLane)
   && (f.charge === undefined || l.charge === f.charge) && (f.basket === undefined || l.basket === f.basket) && (f.shipper === undefined || l.shipper === f.shipper)
   && (f.pol === undefined || l.pol === f.pol) && (f.pod === undefined || l.pod === f.pod)
   && (!f.noLane || !laneOf(l)) && (!f.agentsIn || f.agentsIn.has(l.agent)) && (!f.lanesIn || f.lanesIn.has(laneOf(l))) && (!f.notCharges || !f.notCharges.has(l.charge));
@@ -1194,7 +1198,7 @@ const state = {
   from: `${PERF_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
   mode: "table",   // opens on the Billing Details table; Chart is one click away
   currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
-  detail: "billing", detailQ: "", detailAll: false, basketsOpen: new Set(),   // Performance opens on Billing Details
+  detail: "billing", detailQ: "", detailAll: false, basketsOpen: new Set(), lanesOpen: new Set(),   // Performance opens on Billing Details
   charges: new Set(), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
@@ -1677,7 +1681,7 @@ const bucketSpan = (b) => { const e = bucketEnd(b, g()); return { from: b < stat
 function renderTable() {
   const billing = state.detail === "billing";
   if (billing) return renderPivot();
-  $("basketToggle").classList.add("hidden");
+  $("basketToggle").classList.toggle("hidden", state.detail !== "lane");   // Expand all / Collapse all for the lanes' port pairs
   const gr = g(), buckets = bucketRange(state.from, state.to, gr), isAgent = state.detail === "agent";
   const dim = isAgent ? "Agent" : "Trade Lane";
   // Every revenue line is in a row, so the rows add up to Total Revenue: lines without a trade lane
@@ -1685,7 +1689,10 @@ function renderTable() {
   const { rows: all, totals } = trendTable(inPeriod(), isAgent ? (l) => l.agent : (l) => laneOf(l) || NO_LANE, buckets, gr);
   const rows = [...all.filter((r) => r.name !== NO_LANE), ...all.filter((r) => r.name === NO_LANE)];
   const q = state.detailQ.toLowerCase();
-  const filtered = q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
+  // Trade lanes open into their POL → POD port pairs (+ on a lane); a search also matches port pairs and opens the lane
+  const portsOf = (lane) => trendTable(inPeriod().filter((l) => laneOf(l) === lane), (l) => l.lane || "(No POL / POD)", buckets, gr).rows;
+  const portHit = (r) => !isAgent && r.name !== NO_LANE && portsOf(r.name).some((p) => p.name.toLowerCase().includes(q));
+  const filtered = q ? rows.filter((r) => r.name.toLowerCase().includes(q) || portHit(r)) : rows;
   const main = filtered.filter((r) => r.name !== NO_LANE), noLane = filtered.filter((r) => r.name === NO_LANE);
   const limit = false;   // every agent and every trade lane is listed (no top-15 / Other row)
   let shown = limit ? main.slice(0, 15) : main;
@@ -1706,16 +1713,28 @@ function renderTable() {
   $("detailTable").className = "";
   $("detailTable").innerHTML =
     `<thead><tr><th>${dim}</th>${buckets.map((b) => `<th>${bucketLabel(b, gr)}</th>`).join("")}<th>Total</th></tr></thead>
-     <tbody>${shown.map((r) => `<tr${r.others || r.name === NO_LANE ? ' class="recon"' : ""}><td class="name" title="${esc(r.name)}">${esc(r.name)}</td>${buckets.map((b) => cell(r.cells[b], rowName(r), b)).join("")}${cell(r.total, rowName(r), "")}</tr>`).join("")
+     <tbody>${shown.map((r) => {
+       const canOpen = !isAgent && !r.others && r.name !== NO_LANE, open = canOpen && (!!q || state.lanesOpen.has(r.name));
+       const tg = canOpen ? `<button class="tg" data-ln="${esc(r.name)}" aria-expanded="${open}">${open ? "−" : "+"}</button>` : "";
+       let html = `<tr class="${r.others || r.name === NO_LANE ? "recon" : canOpen ? "lane0" : ""}"><td class="name" title="${esc(r.name)}">${tg}${esc(r.name)}</td>${buckets.map((b) => cell(r.cells[b], rowName(r), b)).join("")}${cell(r.total, rowName(r), "")}</tr>`;
+       if (open) for (const p of portsOf(r.name)) {
+         const pc = (v, b) => `<td>${v ? `<button class="num${v < 0 ? " neg" : ""}" data-n="${esc(r.name)}" data-p="${esc(p.name)}" data-b="${b ?? ""}">${money(v)}</button>` : '<span class="dash">–</span>'}</td>`;
+         html += `<tr class="lane1"><td class="name" title="${esc(p.name)}">${esc(p.name)}</td>${buckets.map((b) => pc(p.cells[b], b)).join("")}${pc(p.total, "")}</tr>`;
+       }
+       return html;
+     }).join("")
        || `<tr><td colspan="${2 + buckets.length}" style="text-align:center;padding:24px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>
      <tfoot><tr><td>TOTAL${q ? "" : " = Total Revenue"}</td>${buckets.map((b) => cell(totals.cells[b], "", b)).join("")}${cell(totals.total, "", "")}</tr></tfoot>`;
   $("detailMore").classList.add("hidden");
-  $("detailMore").textContent = state.detailAll ? "Show top 15" : `Show all ${main.length}`;
+  if (!isAgent) { const ls = main.map((r) => r.name); $("basketToggle").textContent = ls.length && ls.every((n) => state.lanesOpen.has(n)) ? "Collapse all" : "Expand all"; }
 }
 $("detailTable").onclick = (e) => {
   if (state.detail === "billing") return pivotClick(e);
+  const ln = e.target.closest("[data-ln]");
+  if (ln) { const k = ln.dataset.ln; state.lanesOpen.has(k) ? state.lanesOpen.delete(k) : state.lanesOpen.add(k); return renderTable(); }
   const b = e.target.closest("button.num"); if (!b) return;
-  const name = b.dataset.n || null, bucket = b.dataset.b || null, isAgent = state.detail === "agent";
+  const name = b.dataset.n || null, bucket = b.dataset.b || null, isAgent = state.detail === "agent", port = b.dataset.p;
+  if (port != null) return openDrill({ title: `${name} › ${port}` + (bucket ? ` — ${bucketLabel(bucket, g())}` : ""), lane: name, portLane: port, ...(bucket ? bucketSpan(bucket) : {}) });
   const what = name === "__others" ? `Other ${isAgent ? "agents" : "trade lanes"}` : name ?? (isAgent ? "All agents" : "All lanes");
   const who = !name ? {} : name === "__others" ? (isAgent ? { agentsIn: new Set(detailOthers) } : { lanesIn: new Set(detailOthers) })
     : name === NO_LANE ? { noLane: true } : isAgent ? { agent: name } : { lane: name };
@@ -1756,6 +1775,11 @@ function buildPivot(lines) {
 }
 
 $("basketToggle").onclick = () => {
+  if (state.detail === "lane") {   // open / close every trade lane's port pairs
+    const lanes = [...new Set(inPeriod().map(laneOf).filter(Boolean))];
+    if (lanes.length && lanes.every((n) => state.lanesOpen.has(n))) state.lanesOpen.clear(); else for (const n of lanes) state.lanesOpen.add(n);
+    return renderTable();
+  }
   const names = [...new Set(billingLines().map((l) => l.basket || "(Not mapped)"))];
   if (names.length && names.every((n) => state.basketsOpen.has(n))) state.basketsOpen.clear(); else for (const n of names) state.basketsOpen.add(n);
   renderPivot();

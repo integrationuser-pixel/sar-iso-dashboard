@@ -173,8 +173,7 @@
   #chartView { display: grid; gap: 20px; animation: viewFadeIn .35s ease both; }
   #tableView { animation: viewFadeIn .35s ease both; }
   .row { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
-  .row.bk-row { grid-template-columns: 1fr 1fr; }
-  #basketCharts { display: grid; gap: 20px; margin-bottom: 20px; }
+  #basketCharts, #generalCharts { display: grid; gap: 20px; }
   #basketCharts.hidden { display: none; }
   .legend .lg { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-soft); }
   .row.rev { grid-template-columns: 1fr 2fr; }
@@ -680,12 +679,10 @@
   <div id="basketCharts" class="hidden">
     <section class="card panel"><h2>Revenue by Basket</h2><p class="sub" id="bkStackSub">Net revenue per month, stacked by charge basket — click a bar segment for the invoices</p>
       <div class="chart" style="height:380px"><canvas id="bkStackChart"></canvas></div></section>
-    <div class="row bk-row">
-      <section class="card panel"><h2>Basket Share</h2><p class="sub">Net revenue by basket for the selected period — click a bar for the invoices</p><div class="chart" style="height:300px"><canvas id="bkShareChart"></canvas></div></section>
-      <section class="card panel"><h2>Change by Basket</h2><p class="sub" id="bkChangeSub"></p><div class="chart" style="height:300px"><canvas id="bkChangeChart"></canvas></div></section>
-    </div>
+    <section class="card panel"><h2>Basket Share</h2><p class="sub">Net revenue by basket for the selected period — click a bar for the invoices</p><div class="chart" style="height:300px"><canvas id="bkShareChart"></canvas></div></section>
     <section class="card panel"><h2>Top Charges</h2><p class="sub">Every charge by net revenue (hover for its basket) — click a bar for the invoices</p><div class="chart" id="bkChargeBox"><canvas id="bkChargeChart"></canvas></div></section>
   </div>
+  <div id="generalCharts">   <!-- Agent Detail / Trade Lane Detail chart view (not shown for Billing Details) -->
   <div class="row">
     <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">All lanes (origin → destination country), excludes sundry and no-BL entries</p><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
     <section class="card panel"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
@@ -693,6 +690,7 @@
   <div class="row rev">
     <section class="card panel"><h2>Top Agents</h2><p class="sub">Top 10 billing parties by net revenue</p><div class="chart"><canvas id="agentChart"></canvas></div></section>
     <section class="card panel"><h2>Revenue Trend</h2><p class="sub" id="trendSub"></p><div class="chart"><canvas id="trendChart"></canvas></div></section>
+  </div>
   </div>
   </div>
 
@@ -1466,7 +1464,8 @@ function render() {
     : "Billing details, agent and trade lane tables for the selected period — click any number for the invoices.";
   $("basketCharts").classList.toggle("hidden", !chart || state.detail !== "billing");
   if (chart && state.detail === "billing") renderBasketCharts(lines);
-  if (chart) {
+  $("generalCharts").classList.toggle("hidden", state.detail === "billing");
+  if (chart && state.detail !== "billing") {
     const lanes = topBy(lines, laneOf, Infinity);
     $("laneChartBox").style.height = `${Math.max(340, lanes.length * 24 + 40)}px`;   // room for every lane
     renderBar("laneChart", lanes, (name) => openDrill({ title: `Trade Lane: ${name}`, lane: name }), 44);
@@ -1599,28 +1598,7 @@ function renderBasketCharts(lines) {
     },
   });
 
-  // 3. change: the latest month / week with billing against the one before it
-  const withData = buckets.filter((b, i) => totals[i]);
-  const [prev, last] = withData.slice(-2);
-  const delta = baskets.map((bk) => ({ name: bk, value: last && prev ? (cell.get(`${bk}|${last}`) || 0) - (cell.get(`${bk}|${prev}`) || 0) : 0 }));
-  $("bkChangeSub").textContent = last && prev ? `${bucketLabel(last, gr)} vs ${bucketLabel(prev, gr)} — net revenue up (right) or down (left) by basket`
-    : `Needs two ${per}s with billing in the selected period`;
-  charts.bkChange?.destroy();
-  charts.bkChange = new Chart($("bkChangeChart"), {
-    type: "bar",
-    data: { labels: delta.map((d) => d.name), datasets: [{ data: delta.map((d) => conv(d.value)), backgroundColor: CHART_BLUE, borderRadius: 4, maxBarThickness: 28 }] },
-    options: {
-      indexAxis: "y", maintainAspectRatio: false, animation: false, layout: { padding: { right: 70, left: 10 } },
-      scales: { x: yMoney, y: { grid: { display: false }, ticks: { color: "#334155", font: { size: 11 } } } },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => { const bk = delta[c.dataIndex].name;
-                   return [`${bucketLabel(last, gr)}: ${money(cell.get(`${bk}|${last}`) || 0)}`, `${bucketLabel(prev, gr)}: ${money(cell.get(`${bk}|${prev}`) || 0)}`, `Change: ${money(delta[c.dataIndex].value)}`]; } } },
-                 valueLabels: { format: (_, i) => (delta[i].value ? `${delta[i].value > 0 ? "+" : ""}${moneyShort(delta[i].value)}` : "") } },
-      onClick: (_, els) => { if (els[0] && last) { const bk = delta[els[0].index].name; openDrill({ title: `${bk} — ${bucketLabel(last, gr)}`, basket: bk, ...bucketSpan(last) }); } },
-      onHover: hover,
-    },
-  });
-
-  // 4. every charge, coloured by basket
+  // 3. every charge
   const ch = [...byCharge.values()].sort((a, b) => b.value - a.value);
   $("bkChargeBox").style.height = `${Math.max(300, ch.length * 24 + 40)}px`;
   charts.bkCharge?.destroy();

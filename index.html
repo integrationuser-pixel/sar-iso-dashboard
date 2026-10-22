@@ -743,7 +743,10 @@
   </div>
 
   <section class="card panel" id="tableView">
-    <h2 id="detailTitle">Billing Details</h2><p class="sub" id="detailSub"></p>
+    <div class="tools" style="justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+      <div><h2 id="detailTitle">Billing Details</h2><p class="sub" id="detailSub" style="margin-bottom:0"></p></div>
+      <span id="toggleSlotTable"></span>   <!-- the Table / Chart switch sits here in Table view -->
+    </div>
     <div class="tools">
       <div class="seg hidden" id="detailTabs"><button data-t="billing">Billing Details</button><button data-t="agent">Agent Detail</button><button data-t="lane">Trade Lane Detail</button></div>
       <input class="search" id="detailSearch" placeholder="Search…">
@@ -1504,9 +1507,11 @@ function render() {
   $("chartView").classList.toggle("hidden", !chart);
   $("tableView").classList.toggle("hidden", chart);
   for (const b of $("viewToggle").children) b.setAttribute("aria-pressed", b.dataset.mode === state.mode);
-  $("viewSub").textContent = chart
-    ? "Charts for the selected period — click any bar or point for the invoices."
-    : "Billing details, agent and trade lane tables for the selected period — click any number for the invoices.";
+  // The Table / Chart switch sits in the table's heading in Table view, and in a heading bar above the charts in Chart view
+  (chart ? $("perfViewbar") : $("toggleSlotTable")).appendChild($("viewToggle"));
+  $("perfViewbar").classList.toggle("hidden", !chart);
+  $("viewTitle").textContent = { billing: "Billing Details", agent: "Agent Detail", lane: "Trade Lane Detail" }[state.detail] || "Charts";
+  $("viewSub").textContent = "Charts for the selected period — click any bar or point for the invoices.";
   $("basketCharts").classList.toggle("hidden", !chart || state.detail !== "billing");
   if (chart && state.detail === "billing") renderBasketCharts(lines);
   $("generalCharts").classList.toggle("hidden", state.detail === "billing");

@@ -214,6 +214,11 @@
   .pivot th.dim.last, .pivot td.dim.last { box-shadow: 1px 0 0 var(--line); }
   .pivot th.mtot, .pivot td.mtot { background: #F6F8FC; }
   .pivot th.gt { background: #E4EBFA; color: var(--ink); }
+  /* Billing Details: Charge Name (300px) and Grand Total stay frozen while the month / week columns scroll */
+  .pivot th.dim, .pivot td.dim { box-sizing: border-box; }
+  .pivot th.gt, .pivot td.gt { position: sticky; left: 300px; z-index: 2; box-shadow: inset -1px 0 0 var(--line); }
+  .pivot thead th.gt { z-index: 5; }
+  .pivot tfoot td.gt { z-index: 4; }
   .pivot td.gt { background: var(--grand); font-weight: 700; }
   .pivot tr.lv0 td { font-weight: 700; font-size: 13px; }
   .pivot tbody tr.bk { background: #F4F7FD; }
@@ -571,10 +576,6 @@
       <a href="/" class="sub" data-page="sales" data-detail="agent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/></svg>Agent Detail</a>
       <a href="/" class="sub" data-page="sales" data-detail="lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="6" r="2.5"/><path d="M7.5 18H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h7.5"/></svg>Trade Lane Detail</a>
     </div>
-    <a href="/" data-page="mr">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
-      M&amp;R Operations
-    </a>
     <a href="/" data-page="inv">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12"/><path d="M8 21v-6h8v6M8 12h8"/></svg>
       Current Tank Inventory Status
@@ -586,6 +587,10 @@
     <a href="/" data-page="fin">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/></svg>
       Finance
+    </a>
+    <a href="/" data-page="mr">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="11" rx="5.5"/><path d="M6 18v2M18 18v2M12 7V4"/></svg>
+      M&amp;R Operations
     </a>
   </nav>
   <h4 class="hidden" id="adminHead">ADMIN</h4>

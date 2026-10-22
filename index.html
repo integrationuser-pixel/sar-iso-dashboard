@@ -2152,6 +2152,7 @@ function renderInventory() {
   $("mrChartView").classList.toggle("hidden", !chart);
   $("mrTableView").classList.toggle("hidden", chart);
   $("mrPivotXlsx").classList.toggle("hidden", chart);
+  $("mrDepot").classList.toggle("hidden", chart);   // Chart view shows charts only (no Depot Report table)
   $("mrViewSub").textContent = chart ? "Top 10 agents holding tanks (agent on the latest movement) — click a bar for the tanks"
                                      : "Tanks by current activity — click a number for the tanks";
   if (!chart) return renderMrPivot(tanks);

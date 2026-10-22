@@ -218,6 +218,14 @@
   .pivot tr.lv0 td { font-weight: 700; font-size: 13px; }
   .pivot tbody tr.bk { background: #F4F7FD; }
   #detailTable:not(.pivot) th.gt { background: #E4EBFA; color: var(--ink); }
+  /* Trade Lane Detail: Trade Lane and Grand Total stay frozen while the month columns scroll */
+  #detailTable.lanes tr > :nth-child(1) { box-sizing: border-box; width: 320px; min-width: 320px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+  #detailTable.lanes tr > :nth-child(2) { position: sticky; left: 320px; z-index: 2; box-shadow: inset -1px 0 0 var(--line); }
+  #detailTable.lanes tbody tr > td:nth-child(1) { background: inherit; }
+  #detailTable.lanes tbody td.gt { background: var(--grand); }
+  #detailTable.lanes thead th:nth-child(2) { z-index: 5; }
+  #detailTable.lanes tfoot td:nth-child(2) { z-index: 4; }
+  #detailTable.lanes tbody td[colspan] { position: static; width: auto; max-width: none; }
   #detailTable:not(.pivot) td.gt { background: var(--grand); font-weight: 700; }
   #detailTable tr.lane0 td { font-weight: 700; }
   #detailTable tr.lane0 .tg { margin-right: 8px; }
@@ -1750,7 +1758,7 @@ function renderTable() {
   const gtFirst = !isAgent;
   const row = (cells, total, mk) => { const gt = mk(total, "").replace("<td>", '<td class="gt">');
     return (gtFirst ? gt : "") + buckets.map((b) => mk(cells[b], b)).join("") + (gtFirst ? "" : mk(total, "")); };
-  $("detailTable").className = "";
+  $("detailTable").className = isAgent ? "" : "lanes";   // Trade Lane Detail: lane + Grand Total columns frozen
   $("detailTable").innerHTML =
     `<thead><tr><th>${dim}</th>${gtFirst ? '<th class="gt">Grand Total</th>' : ""}${buckets.map((b) => `<th>${bucketLabel(b, gr)}</th>`).join("")}${gtFirst ? "" : "<th>Total</th>"}</tr></thead>
      <tbody>${shown.map((r) => {

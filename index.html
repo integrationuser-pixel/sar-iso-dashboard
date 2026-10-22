@@ -1545,6 +1545,7 @@ function renderBar(id, data, onClick, maxLabel = 30) {
 const CHART_BLUE = "#2563EB";
 const BASKET_COLORS = ["#1E3A8A", "#1D4ED8", "#2563EB", "#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE"];
 const basketNo = (b) => (/^\d+/.test(b) ? +b.match(/^\d+/)[0] : 99);
+const basketName = (b) => b.replace(/^\s*\d+\.\s*/, "");   // "3. Tank Rent" -> "Tank Rent" (chart labels)
 const basketColor = (b) => BASKET_COLORS[Math.min(basketNo(b), 7) - 1] || BASKET_COLORS[6];
 const yMoney = { ticks: { callback: (v) => moneyShort(state.currency === "INR" ? v / state.rate : v) }, grid: { color: "#e2e8f0" } };
 function renderBasketCharts(lines) {
@@ -1584,13 +1585,13 @@ function renderBasketCharts(lines) {
   charts.bkShare?.destroy();
   charts.bkShare = new Chart($("bkShareChart"), {
     type: "bar",
-    data: { labels: share.map((d) => d.name), datasets: [{ data: share.map((d) => conv(d.value)), backgroundColor: CHART_BLUE, borderRadius: 4, maxBarThickness: 28 }] },
+    data: { labels: share.map((d) => basketName(d.name)), datasets: [{ data: share.map((d) => conv(d.value)), backgroundColor: CHART_BLUE, borderRadius: 4, maxBarThickness: 28 }] },
     options: {
       indexAxis: "y", maintainAspectRatio: false, animation: false, layout: { padding: { right: 96 } },
       scales: { x: yMoney, y: { grid: { display: false }, ticks: { color: "#334155", font: { size: 11 } } } },
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(share[c.dataIndex].value) } },
                  valueLabels: { format: (_, i) => `${moneyShort(share[i].value)} (${sTot ? (share[i].value / sTot * 100).toFixed(0) : 0}%)` } },
-      onClick: (_, els) => { if (els[0]) { const bk = share[els[0].index].name; openDrill({ title: bk, basket: bk }); } },
+      onClick: (_, els) => { if (els[0]) { const bk = share[els[0].index].name; openDrill({ title: basketName(bk), basket: bk }); } },
       onHover: hover,
     },
   });

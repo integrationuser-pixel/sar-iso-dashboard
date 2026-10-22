@@ -257,12 +257,10 @@
   .modal td, .modal th { text-align: left; font-size: 12px; padding: 8px 12px; }
   .modal td.amt, .modal th.amt { text-align: right; }
   .modal td:first-child, .modal th:first-child { position: static; }
-  .modal tr.colf th { padding: 4px 6px; border-bottom: 1px solid var(--line); background: var(--card); }
-  .cf-btn { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; min-width: 70px; height: 26px; padding: 0 8px;
-    border: 1px solid var(--line); border-radius: 6px; background: var(--paper); font: inherit; font-size: 11.5px; font-weight: 500; text-transform: none;
-    letter-spacing: 0; color: var(--ink-soft); cursor: pointer; white-space: nowrap; }
-  .cf-btn:hover { border-color: var(--accent); }
-  .cf-btn.on { border-color: var(--accent); background: #EFF4FF; color: var(--accent-dark); font-weight: 700; }
+  .cf-btn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-left: 5px; padding: 0; vertical-align: middle;
+    border: 1px solid transparent; border-radius: 5px; background: none; color: #A0AEC0; cursor: pointer; }
+  .cf-btn:hover { border-color: var(--line); background: #fff; color: var(--accent); }
+  .cf-btn.on { border-color: var(--accent); background: #EFF4FF; color: var(--accent); }
   .cf-panel { position: fixed; z-index: 1000; width: 280px; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 12px 32px rgb(15 42 77 / .2); }
   .cf-panel.hidden { display: none; }
   .cf-panel .cf-search { width: 100%; height: 30px; padding: 0 10px; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: 12px; }
@@ -973,11 +971,16 @@ const store = {
 const colFilters = {}, colFilterRender = {}, colFilterLast = {};   // table id -> [Set of kept values | null] / re-render / last rows + getters
 const cfKey = (v) => (v == null || v === "" ? "" : typeof v === "number" ? String(Math.round(v * 100) / 100) : String(v));
 const cfLabel = (k) => (k === "" ? "(Blanks)" : /^\d{4}-\d{2}-\d{2}$/.test(k) ? shortDate(k) : /^-?\d+(\.\d+)?$/.test(k) ? (+k).toLocaleString("en-US", { maximumFractionDigits: 2 }) : k);
-function colFilterRow(id, n, skip = []) {
+function colFilterHead(table, id) {   // a small ▾ in each column heading opens that column's filter
   const f = colFilters[id] || (colFilters[id] = []);
-  return `<tr class="colf">${Array.from({ length: n }, (_, i) => `<th>${skip.includes(i) ? ""
-    : `<button type="button" class="cf-btn${f[i] ? " on" : ""}" data-cf="${id}" data-i="${i}" aria-haspopup="true">${f[i] ? `${n0(f[i].size)} selected` : "All"}<span aria-hidden="true">▾</span></button>`}</th>`).join("")}</tr>`;
+  const ths = table.tHead?.rows[0]?.cells || [];
+  for (let i = 0; i < ths.length; i++) {
+    if (!colFilterLast[id]?.getters?.[i]) continue;
+    ths[i].insertAdjacentHTML("beforeend", `<button type="button" class="cf-btn${f[i] ? " on" : ""}" data-cf="${id}" data-i="${i}" aria-haspopup="true"
+      title="${f[i] ? `Filtered: ${n0(f[i].size)} value${f[i].size === 1 ? "" : "s"} selected` : "Filter this column"}" aria-label="Filter this column">${CF_ICON}</button>`);
+  }
 }
+const CF_ICON = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M1.5 2.5h13l-5 6v4.5l-3 1.5V8.5z"/></svg>';
 function colFilterApply(id, rows, getters) {
   colFilterLast[id] = { rows, getters };
   const f = colFilters[id] || [];
@@ -985,10 +988,6 @@ function colFilterApply(id, rows, getters) {
   return rows.filter((r) => getters.every((g, i) => !f[i] || !g || f[i].has(cfKey(g(r)))));
 }
 function colFilterReset(id) { colFilters[id] = []; cfClose(); }
-function colFilterStick(table) {   // second header row (the filters) stays under the first while scrolling
-  const hr = table.tHead?.rows; if (!hr || hr.length < 2) return;
-  const h = hr[0].getBoundingClientRect().height; for (const th of hr[1].cells) th.style.top = `${h}px`;
-}
 // the drop-down panel (one, shared)
 const cf = { id: null, i: null, q: "" };
 const cfPanel = document.createElement("div");
@@ -1806,13 +1805,13 @@ function renderChargeBreakdown() {
   const txt = (v) => (v ? esc(v) : '<span class="blank">(blank)</span>');
   $("sTitle").textContent = sum.charge || "(blank)";
   $("sSub").textContent = `${shortDate(state.from)} – ${shortDate(state.to)} · ${rows.length} shipper / party / lane combinations · Total ${money(total)}`;
-  $("sTable").innerHTML = `<thead><tr><th>Shipper Name</th><th>Party Name</th><th>POL</th><th>POD</th><th class="amt">Total</th></tr>${colFilterRow("sTable", 5)}</thead><tbody>`
+  $("sTable").innerHTML = `<thead><tr><th>Shipper Name</th><th>Party Name</th><th>POL</th><th>POD</th><th class="amt">Total</th></tr></thead><tbody>`
     + (rows.map((r, i) => `<tr><td class="name" title="${esc(r.shipper)}">${txt(r.shipper)}</td><td class="name" title="${esc(r.agent)}">${txt(r.agent)}</td>`
         + `<td>${txt(r.pol)}</td><td>${txt(r.pod)}</td>`
         + `<td class="amt"><button class="num${r.total < 0 ? " neg" : ""}" data-i="${i}" title="Show the invoices">${money(r.total)}</button></td></tr>`).join("")
       || '<tr><td colspan="5" style="text-align:center;padding:30px;color:#94a3b8">No matching rows</td></tr>')
     + `</tbody><tfoot><tr><td colspan="4">Total (${rows.length})</td><td class="amt${total < 0 ? " neg" : ""}">${money(total)}</td></tr></tfoot>`;
-  colFilterStick($("sTable"));
+  colFilterHead($("sTable"), "sTable");
 }
 colFilterRender.sTable = () => renderChargeBreakdown();
 function closeChargeBreakdown() { $("sumOverlay").classList.add("hidden"); sum.charge = null; }
@@ -1853,7 +1852,7 @@ function renderDrill() {
   $("mTitle").textContent = f.title;
   $("mSub").textContent = `${shortDate(f.from)} – ${shortDate(f.to)} · ${new Set(rows.map((l) => l.invoiceId)).size} documents · ${rows.length} charge lines · Net ${money(total)}`;
   const pill = (t) => `<span class="pill${t === "Credit Note" ? " cn" : t === "Debit Note" ? " dn" : ""}">${t}</span>`;
-  $("mTable").innerHTML = `<thead><tr><th>Date</th><th>Invoice No</th><th>Type</th><th>Agent</th><th>POL → POD</th><th>Charge</th><th>Category</th><th>BL No</th><th class="amt">Amount</th></tr>${colFilterRow("mTable", 9)}</thead><tbody>`
+  $("mTable").innerHTML = `<thead><tr><th>Date</th><th>Invoice No</th><th>Type</th><th>Agent</th><th>POL → POD</th><th>Charge</th><th>Category</th><th>BL No</th><th class="amt">Amount</th></tr></thead><tbody>`
     + (rows.slice(0, state.drillLimit).map((l) => `<tr><td>${shortDate(l.date)}</td><td class="mono">${esc(l.invoiceNo)}</td><td>${pill(l.docType)}</td>
         <td class="name" title="${esc(l.agent)}">${esc(l.agent)}</td><td>${l.lane ? esc(l.lane) : '<span class="dash">—</span>'}</td>
         <td class="name" title="${esc(l.charge)}">${esc(l.charge)}</td><td><span class="dot" style="background:${catColor(catOf(l))}"></span> ${esc(catLabel(catOf(l)))}</td>
@@ -1861,7 +1860,7 @@ function renderDrill() {
       || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">No matching lines</td></tr>') + "</tbody>";
   $("mMore").classList.toggle("hidden", rows.length <= state.drillLimit);
   $("mMore").textContent = `Show more (${rows.length - state.drillLimit} left)`;
-  colFilterStick($("mTable"));
+  colFilterHead($("mTable"), "mTable");
 }
 colFilterRender.mTable = () => { state.drillLimit = 200; renderDrill(); };
 function closeDrill() { $("overlay").classList.add("hidden"); state.drill = null; }
@@ -2175,7 +2174,7 @@ function renderTanks() {
   const idle = rows.map(idleDays).filter((d) => d != null);
   $("tSub").textContent = `${n0(rows.length)} tanks${idle.length ? ` · average ${Math.round(idle.reduce((a, b) => a + b, 0) / idle.length)} idle days` : ""} · longest idle first`;
   const dash = '<span class="dash">—</span>', txt = (v) => (v ? esc(v) : dash);
-  $("tTable").innerHTML = `<thead><tr><th>Container</th><th>Size / Type</th><th>Principal</th><th>Activity</th><th>Activity Date</th><th class="amt">Idle Days</th><th>Agent</th><th>From</th><th>To</th><th>Job / BL</th></tr>${colFilterRow("tTable", 10)}</thead><tbody>`
+  $("tTable").innerHTML = `<thead><tr><th>Container</th><th>Size / Type</th><th>Principal</th><th>Activity</th><th>Activity Date</th><th class="amt">Idle Days</th><th>Agent</th><th>From</th><th>To</th><th>Job / BL</th></tr></thead><tbody>`
     + (rows.slice(0, 1500).map((t) => { const d = idleDays(t); return `<tr><td class="mono">${esc(t.c)}</td><td>${esc([t.size, t.type].filter(Boolean).join(" "))}</td>
         <td class="name" title="${esc(t.principal)}">${esc(t.principal)}</td>
         <td><span class="bucket-pill" style="background:${MR_COLORS[t.bucket]}1F;color:${MR_COLORS[t.bucket]}">${esc(t.activity)}</span></td>
@@ -2183,7 +2182,7 @@ function renderTanks() {
         <td class="name" title="${esc(t.agent)}">${esc(t.agent)}</td><td class="name" title="${esc(t.from)}">${txt(t.from)}</td><td class="name" title="${esc(t.to)}">${txt(t.to)}</td>
         <td class="mono">${txt(t.exportBl || t.importBl || t.jobNo)}</td></tr>`; }).join("")
       || '<tr><td colspan="10" style="text-align:center;padding:30px;color:#94a3b8">No matching tanks</td></tr>') + "</tbody>";
-  colFilterStick($("tTable"));
+  colFilterHead($("tTable"), "tTable");
 }
 colFilterRender.tTable = () => renderTanks();
 function closeTanks() { $("mrOverlay").classList.add("hidden"); mr.drill = null; }
@@ -2522,12 +2521,12 @@ function renderBls() {
   const rows = blRows(), tanks = rows.reduce((a, x) => a + x.tanks.length, 0), dash = '<span class="dash">—</span>';
   $("bTitle").textContent = dep.drill.title;
   $("bSub").textContent = `${n0(rows.length)} BLs · ${n0(tanks)} tanks · newest first`;
-  $("bTable").innerHTML = `<thead><tr><th>HBL No</th><th>HBL Date</th><th>Shipper</th><th>PLR Agent</th><th>POL</th><th>POD</th><th class="amt">Tanks</th><th>Container Nos</th></tr>${colFilterRow("bTable", 8)}</thead><tbody>`
+  $("bTable").innerHTML = `<thead><tr><th>HBL No</th><th>HBL Date</th><th>Shipper</th><th>PLR Agent</th><th>POL</th><th>POD</th><th class="amt">Tanks</th><th>Container Nos</th></tr></thead><tbody>`
     + (rows.slice(0, 1500).map((x) => `<tr><td class="mono">${esc(x.bl)}</td><td>${shortDate(x.date)}</td><td class="name" title="${esc(x.shipper)}">${esc(x.shipper)}</td>
         <td class="name" title="${esc(x.plrAgent)}">${esc(x.plrAgent)}</td><td>${x.pol ? esc(x.pol) : dash}</td><td>${x.pod ? esc(x.pod) : dash}</td>
         <td class="amt mono">${x.tanks.length}</td><td class="bl-tanks" title="${esc(x.tanks.join(", "))}">${esc(x.tanks.join(", ")) || dash}</td></tr>`).join("")
       || '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8">No matching BLs</td></tr>') + "</tbody>";
-  colFilterStick($("bTable"));
+  colFilterHead($("bTable"), "bTable");
 }
 colFilterRender.bTable = () => renderBls();
 function closeBls() { $("depOverlay").classList.add("hidden"); dep.drill = null; }
@@ -2748,13 +2747,13 @@ function renderFinDocs() {
   $("fTitle").textContent = fin.drill.title;
   $("fSub").textContent = `${n0(rows.length)} invoices · outstanding ${usd2(total)} · most overdue first`;
   $("fTable").innerHTML = `<thead><tr><th>Reference No</th>${ap ? "<th>Purchase Invoice</th>" : ""}<th>Party</th><th>Reference Date</th><th>Due Date</th><th class="amt">Overdue Days</th>
-      <th class="amt">Invoice Amount</th><th class="amt">Adjusted</th><th class="amt">Outstanding</th><th>BL No</th></tr>${colFilterRow("fTable", ap ? 10 : 9)}</thead><tbody>`
+      <th class="amt">Invoice Amount</th><th class="amt">Adjusted</th><th class="amt">Outstanding</th><th>BL No</th></tr></thead><tbody>`
     + (rows.slice(0, 2000).map((d) => `<tr><td class="mono">${esc(d.ref)}</td>${ap ? `<td class="mono">${esc(d.invoiceNo)}</td>` : ""}<td class="name" title="${esc(d.party)}">${esc(d.party)}</td>
         <td>${shortDate(d.date)}</td><td>${shortDate(d.due)}</td><td class="amt mono">${overdueDays(d)}</td><td class="amt mono">${usd2(d.amount)}</td>
         <td class="amt mono">${usd2(d.adjusted)}</td><td class="amt mono${d.outstanding < 0 ? " neg" : ""}">${usd2(d.outstanding)}</td><td class="mono">${d.bl ? esc(d.bl) : dash}</td></tr>`).join("")
       || `<tr><td colspan="${ap ? 10 : 9}" style="text-align:center;padding:30px;color:#94a3b8">No matching invoices</td></tr>`) + "</tbody>"
     + `<tfoot><tr><td colspan="${ap ? 8 : 7}">Total (${n0(rows.length)})</td><td class="amt">${usd2(total)}</td><td></td></tr></tfoot>`;
-  colFilterStick($("fTable"));
+  colFilterHead($("fTable"), "fTable");
 }
 colFilterRender.fTable = () => renderFinDocs();
 function closeFinDocs() { $("finOverlay").classList.add("hidden"); fin.drill = null; }

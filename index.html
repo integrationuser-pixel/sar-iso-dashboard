@@ -1434,8 +1434,7 @@ function render() {
   renderChargeFilter();
   const lines = inPeriod(), k = kpis(lines), kAll = kpis(inPeriodAll());   // Total Revenue card always covers every charge
 
-  const cards = [["Total Revenue", null], ...MAIN_CATS.map((c) => [`${c} Revenue`, c]),
-                 ...Object.keys(k.byCat).filter((c) => !MAIN_CATS.includes(c)).map((c) => [catLabel(c), c])];
+  const cards = [["Total Revenue", null], ...MAIN_CATS.map((c) => [`${c} Revenue`, c])];   // the 5 main cards only
   $("kpis").innerHTML = cards.map(([label, cat]) => {
     const v = cat ? k.byCat[cat] : kAll.total;
     return `<button class="kpi" data-cat="${esc(cat || "")}" title="${esc(money(v))}" style="border-top-color:${cat ? catColor(cat) : "#1E3A8A"}">

@@ -1182,14 +1182,15 @@ function laneOf(l) { return l.countryLane || l.lane || null; }
 const nOtherLabel = () => (allChargesOn() ? "Total Revenue" : "Total Revenue — selected charges");
 let detailOthers = [];
 const DEFAULT_CHARGES = ["TANK RENT", "IMPORT DETENTION CHARGES", "LEASE RENT CHARGES", "EXPORT DETENTION CHARGES", "OCEAN FREIGHT CHARGES"];
-// Default: Monthly view from February 2026 (SAR Global's first invoices) to the end of the current month.
-const DEFAULT_FROM_MONTH = "2026-02";
+// Default month ranges (each runs to the end of the current month).
+const DEFAULT_FROM_MONTH = "2026-02";   // Tank Deployment's default start
+const PERF_FROM_MONTH = "2026-01";      // Performance Monthly View starts in January 2026
 const FIRST_MONTH = "2026-01";   // earliest month offered in the month pickers (Sales, Tank Deployment, Finance)
 const thisMonth = () => iso(new Date()).slice(0, 7);
 const monthEnd = (m) => lastOfMonth(+m.slice(0, 4), +m.slice(5, 7) - 1);
 const state = {
   lines: [], lastSync: null, view: "monthly", periodKey: "",
-  from: `${DEFAULT_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
+  from: `${PERF_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
   mode: "table",   // opens on the Billing Details table; Chart is one click away
   currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
   detail: "billing", detailQ: "", detailAll: false, basketsOpen: new Set(),   // Performance opens on Billing Details
@@ -1378,7 +1379,7 @@ $("views").innerHTML = VIEWS.map(([v, l]) => `<option value="${v}">${l === "Cust
 $("views").onchange = (e) => {
   const v = e.target.value; if (!v) return;
   state.view = v;
-  if (v === "monthly") Object.assign(state, { from: `${DEFAULT_FROM_MONTH}-01`, to: monthEnd(thisMonth()) });
+  if (v === "monthly") Object.assign(state, { from: `${PERF_FROM_MONTH}-01`, to: monthEnd(thisMonth()) });
   else if (v !== "custom") { const o = periodOptions(v, state.lines.map((l) => l.date))[0]; if (o) Object.assign(state, { periodKey: o.key, from: o.from, to: o.to }); }
   render();
 };

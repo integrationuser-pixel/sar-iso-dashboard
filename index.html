@@ -334,8 +334,8 @@
   .pct-bar { display: inline-block; width: 70px; height: 5px; margin-right: 8px; border-radius: 3px; background: var(--paper); vertical-align: middle; overflow: hidden; }
   .pct-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
   .mr-depot th, .mr-depot td { text-align: right; }
-  .mr-depot th:nth-child(-n+3), .mr-depot td:nth-child(-n+3) { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
-  .mr-depot td:nth-child(2), .mr-depot td:nth-child(3) { max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); }
+  .mr-depot th:nth-child(-n+2), .mr-depot td:nth-child(-n+2) { text-align: left; font-family: "Plus Jakarta Sans", sans-serif; }
+  .mr-depot td:nth-child(2) { max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); }
   .mr-depot td:first-child { min-width: 200px; font-weight: 600; }
   .mr-depot tr.dp0 td { font-weight: 700; }
   .mr-depot tr.dp1 { background: #FCFDFF; }
@@ -651,7 +651,7 @@
   <div class="page-head hidden" id="mrHead">
     <div class="ph-text"><h2 id="mrTitle">M&amp;R Operations</h2><p class="sub" id="mrSub">Loading…</p></div>
     <div class="ph-controls">
-      <label class="f">Principal <select id="mrPrincipal"><option value="">All principals</option></select></label>
+      <label class="f hidden">Principal <select id="mrPrincipal"><option value="">All principals</option></select></label>   <!-- principal filter removed -->
       <div class="view-toggle hidden" id="mrTabs" role="group" aria-label="M&amp;R report">   <!-- tabs retired: both reports on one page -->
         <button data-tab="inventory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Total Inventory</button>
         <button data-tab="depot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V9l9-5 9 5v12M7 21v-7h10v7"/></svg>Depot Report</button>
@@ -760,15 +760,13 @@
         <button data-mode="chart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Chart</button>
       </div>
     </div>
-    <div class="row" id="mrChartView">
+    <div class="row solo" id="mrChartView">
       <section class="card panel"><h2>Tanks by Agent</h2><p class="sub">Top 10 agents holding tanks (agent on the latest movement) — click a bar for the tanks</p><div class="chart"><canvas id="mrAgentChart"></canvas></div></section>
-      <section class="card panel"><h2>Tanks by Principal</h2><p class="sub">Click a slice for the tanks</p><div class="chart" style="height:280px"><canvas id="mrPrincipalChart"></canvas></div><div class="legend" id="mrPrincipalLegend"></div></section>
     </div>
     <section class="card panel" id="mrTableView">
       <div class="tools" style="justify-content:space-between">
-        <div><h2>Principal → Activity</h2><p class="sub" style="margin-bottom:0">Tanks by principal and current activity — click a number for the tanks</p></div>
+        <div><h2>Activity</h2><p class="sub" style="margin-bottom:0">Tanks by current activity — click a number for the tanks</p></div>
         <div class="tools" style="margin:0">
-          <button class="btn" id="mrToggleAll">Expand all</button>
           <button class="btn" id="mrPivotXlsx">Export to Excel</button>
         </div>
       </div>
@@ -780,7 +778,7 @@
       <div class="tools" style="justify-content:space-between">
         <div><h2>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
         <div class="tools" style="margin:0">
-          <input class="search" id="mrDepotSearch" placeholder="Search depot, agent, principal…">
+          <input class="search" id="mrDepotSearch" placeholder="Search depot or agent…">
           <button class="btn" id="mrDepotToggleAll">Expand all</button>
           <button class="btn" id="mrDepotXlsx">Export to Excel</button>
         </div>
@@ -2147,7 +2145,7 @@ function renderInventory() {
   const pct = (v) => (total ? `${(v / total * 100).toFixed(1)}% of tanks` : "");
   const card = (key, label, value, note, color) => `<button class="kpi" data-bucket="${key}" style="border-top-color:${color}">
       <div class="lbl">${label}</div><div class="val">${n0(value)}</div><div class="note muted">${note}</div></button>`;
-  $("mrKpis").innerHTML = card("", "Total Tanks", total, mr.principal ? esc(mr.principal) : "All principals", "#1E3A8A")
+  $("mrKpis").innerHTML = card("", "Total Tanks", total, "In the fleet (not off-hired)", "#1E3A8A")
     + MR_BUCKETS.map((b) => card(b, MR_LABEL[b] || b, by[b],
         b === "Empty" ? `${n0(avail)} available · ${n0(alloc)} allocated` : pct(by[b]),
         MR_COLORS[b])).join("");
@@ -2178,24 +2176,6 @@ function renderInventory() {
     },
   });
 
-  // principals
-  const principals = [...tanks.reduce((m, t) => m.set(t.principal, (m.get(t.principal) || 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
-  const pColor = (i) => PRINCIPAL_COLORS[i % PRINCIPAL_COLORS.length];
-  charts.mrPrincipal?.destroy();
-  charts.mrPrincipal = new Chart($("mrPrincipalChart"), {
-    type: "doughnut",
-    data: { labels: principals.map((p) => p[0]), datasets: [{ data: principals.map((p) => p[1]), backgroundColor: principals.map((_, i) => pColor(i)), borderWidth: 1 }] },
-    options: {
-      maintainAspectRatio: false, cutout: "58%", animation: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${principals[c.dataIndex][0]}: ${n0(c.raw)} tanks (${(c.raw / total * 100).toFixed(1)}%)` } },
-                 valueLabels: { format: (v) => `${n0(v)}\n${(v / total * 100).toFixed(0)}%` } },
-      onClick: (_, els) => { if (els[0]) { const p = principals[els[0].index][0]; openTanks({ title: `Principal: ${p}`, principal: p }); } },
-      onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
-    },
-  });
-  $("mrPrincipalLegend").innerHTML = principals.map((p, i) =>
-    `<button data-p="${esc(p[0])}"><span class="dot" style="background:${pColor(i)}"></span>${esc(p[0])} · ${n0(p[1])} (${(p[1] / total * 100).toFixed(0)}%)</button>`).join("")
-    || '<span class="foot">Filters Not Applied/Data unavailable</span>';
 }
 $("mrViewToggle").onclick = (e) => {
   const m = e.target.closest("button[data-mode]")?.dataset.mode;
@@ -2206,58 +2186,36 @@ $("mrKpis").onclick = (e) => {
   const k = b.dataset.bucket;
   openTanks(k ? { title: MR_LABEL[k] || k, bucket: k } : { title: "All tanks" });
 };
-$("mrPrincipalLegend").onclick = (e) => { const p = e.target.closest("button")?.dataset.p; if (p) openTanks({ title: `Principal: ${p}`, principal: p }); };
 
-function mrPivotRows(tanks) {
+// Tanks by current activity (largest first); click a number for the tanks
+function mrActivityRows(tanks) {
   const m = new Map();
-  for (const t of tanks) {
-    let p = m.get(t.principal); if (!p) m.set(t.principal, p = { name: t.principal, n: 0, acts: new Map() });
-    p.n++; p.acts.set(t.activity, (p.acts.get(t.activity) || 0) + 1);
-  }
-  return [...m.values()].sort((a, b) => b.n - a.n).map((p) => ({ ...p, acts: [...p.acts].sort((a, b) => b[1] - a[1]) }));
+  for (const t of tanks) m.set(t.activity, (m.get(t.activity) || 0) + 1);
+  return [...m].sort((a, b) => b[1] - a[1]);
 }
 function renderMrPivot(tanks) {
-  const rows = mrPivotRows(tanks), total = tanks.length;
+  const rows = mrActivityRows(tanks), total = tanks.length;
   const pct = (v) => (total ? v / total * 100 : 0);
   const pc = (v) => `<span class="pct-bar"><i style="width:${Math.min(100, pct(v)).toFixed(1)}%"></i></span>${pct(v).toFixed(0)}%`;
   const num = (v, attrs) => `<button class="num" ${attrs}>${n0(v)}</button>`;
-  let body = "";
-  for (const p of rows) {
-    const open = mr.open.has(p.name);
-    body += `<tr class="lv0"><td><button class="tg" data-tg="${esc(p.name)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(p.name)}</td>
-      <td>${num(p.n, `data-p="${esc(p.name)}"`)}</td><td>${pc(p.n)}</td></tr>`;
-    if (open) for (const [a, v] of p.acts) {
-      const b = (mr.data.tanks.find((t) => t.activity === a) || {}).bucket || "Other";
-      body += `<tr class="lv1"><td><span class="dot" style="background:${MR_COLORS[b]}"></span> ${esc(a)}</td>
-        <td>${num(v, `data-p="${esc(p.name)}" data-a="${esc(a)}"`)}</td><td>${pc(v)}</td></tr>`;
-    }
-  }
-  $("mrPivot").innerHTML = `<thead><tr><th>Principal / Activity</th><th>Tanks</th><th>% of Total</th></tr></thead><tbody>${body
+  const body = rows.map(([a, v]) => {
+    const b = (tanks.find((t) => t.activity === a) || {}).bucket || "Other";
+    return `<tr class="lv0"><td><span class="dot" style="background:${MR_COLORS[b]}"></span> ${esc(a)}</td><td>${num(v, `data-a="${esc(a)}"`)}</td><td>${pc(v)}</td></tr>`;
+  }).join("");
+  $("mrPivot").innerHTML = `<thead><tr><th>Activity</th><th>Tanks</th><th>% of Total</th></tr></thead><tbody>${body
     || '<tr><td colspan="3" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
     <tfoot><tr><td>GRAND TOTAL</td><td>${num(total, 'data-all="1"')}</td><td>${total ? "100%" : "–"}</td></tr></tfoot>`;
-  $("mrToggleAll").textContent = rows.length && rows.every((r) => mr.open.has(r.name)) ? "Collapse all" : "Expand all";
 }
 $("mrPivot").onclick = (e) => {
-  const tg = e.target.closest("[data-tg]");
-  if (tg) { const k = tg.dataset.tg; mr.open.has(k) ? mr.open.delete(k) : mr.open.add(k); return renderMrPivot(mrTanks()); }
   const b = e.target.closest("button.num"); if (!b) return;
   if (b.dataset.all) return openTanks({ title: "All tanks" });
-  openTanks({ title: [b.dataset.p, b.dataset.a].filter(Boolean).join(" › "), principal: b.dataset.p, activity: b.dataset.a });
-};
-// one button: expands everything, or collapses everything once all is open
-$("mrToggleAll").onclick = () => {
-  const rows = mrPivotRows(mrTanks());
-  if (rows.length && rows.every((r) => mr.open.has(r.name))) mr.open.clear(); else for (const r of rows) mr.open.add(r.name);
-  renderMrPivot(mrTanks());
+  openTanks({ title: b.dataset.a, activity: b.dataset.a });
 };
 $("mrPivotXlsx").onclick = () => {
-  const tanks = mrTanks(), total = tanks.length, rows = [];
-  for (const p of mrPivotRows(tanks)) {
-    rows.push({ Principal: p.name, Activity: "(all)", Tanks: p.n, "% of Total": total ? +(p.n / total * 100).toFixed(2) : 0 });
-    for (const [a, v] of p.acts) rows.push({ Principal: p.name, Activity: a, Tanks: v, "% of Total": total ? +(v / total * 100).toFixed(2) : 0 });
-  }
-  rows.push({ Principal: "GRAND TOTAL", Activity: "", Tanks: total, "% of Total": total ? 100 : 0 });
-  writeXlsx(`SAR_Principal_Activity_${todayIso()}.xlsx`, [["Principal → Activity", rows, [34, 40, 10, 12]]]);
+  const tanks = mrTanks(), total = tanks.length;
+  const rows = mrActivityRows(tanks).map(([a, v]) => ({ Activity: a, Tanks: v, "% of Total": total ? +(v / total * 100).toFixed(2) : 0 }));
+  rows.push({ Activity: "GRAND TOTAL", Tanks: total, "% of Total": total ? 100 : 0 });
+  writeXlsx(`SAR_Activity_${todayIso()}.xlsx`, [["Activity", rows, [40, 10, 12]]]);
 };
 
 // ---- Depot Report: tanks at a depot (empty allocated / available, cleaning, repair, survey)
@@ -2274,18 +2232,18 @@ function depotRows() {
   const m = new Map();
   for (const t of mrTanks()) {
     const col = depotCol(t); if (!col) continue;
-    const depot = t.to || "(No location)", key = [depot, t.agent, t.principal].join("\u0001");
+    const depot = t.to || "(No location)", key = [depot, t.agent].join("\u0001");
     let r = m.get(key);
-    if (!r) m.set(key, r = { depot, agent: t.agent, principal: t.principal, total: 0, ...Object.fromEntries(DEPOT_COLS.map(([k]) => [k, 0])) });
+    if (!r) m.set(key, r = { depot, agent: t.agent, total: 0, ...Object.fromEntries(DEPOT_COLS.map(([k]) => [k, 0])) });
     r[col]++; r.total++;
   }
   const q = mr.depotQ.toLowerCase();
-  const rows = [...m.values()].filter((r) => !q || [r.depot, r.agent, r.principal].some((v) => v.toLowerCase().includes(q)));
+  const rows = [...m.values()].filter((r) => !q || [r.depot, r.agent].some((v) => v.toLowerCase().includes(q)));
   const depotTotal = rows.reduce((a, r) => a.set(r.depot, (a.get(r.depot) || 0) + r.total), new Map());
   return rows.sort((a, b) => depotTotal.get(b.depot) - depotTotal.get(a.depot) || a.depot.localeCompare(b.depot) || b.total - a.total);
 }
 function sumRows(rows, label) {
-  const o = { depot: label, agent: "", principal: "", total: 0 };
+  const o = { depot: label, agent: "", total: 0 };
   for (const [k] of DEPOT_COLS) o[k] = 0;
   for (const r of rows) { for (const [k] of DEPOT_COLS) o[k] += r[k]; o.total += r.total; }
   return o;
@@ -2295,8 +2253,8 @@ function renderDepot() {
   const depots = new Set(rows.map((r) => r.depot)).size;
   $("mrDepotSub").textContent = `${n0(grand.total)} tanks at ${n0(depots)} depots (to-location of the latest movement)`;
   const cell = (v, attrs, cls = "") => `<td class="${cls}">${v ? `<button class="num" ${attrs}>${n0(v)}</button>` : '<span class="dash">–</span>'}</td>`;
-  // One row per depot with its totals; + opens it to show each agent / principal at that depot.
-  const nums = (r, base) => cell(r.total, base, "rt") + DEPOT_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`)).join("");   // Grand Total right after Principal
+  // One row per depot with its totals; + opens it to show each agent at that depot.
+  const nums = (r, base) => cell(r.total, base, "rt") + DEPOT_COLS.map(([k]) => cell(r[k], `${base} data-c="${k}"`)).join("");   // Grand Total right after Depot Agent
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   let body = "", i = 0;
   const searching = !!mr.depotQ;
@@ -2304,18 +2262,18 @@ function renderDepot() {
     const d = rows[i].depot, group = [];
     while (i < rows.length && rows[i].depot === d) group.push(rows[i++]);
     const open = searching || mr.depotOpen.has(d), tot = sumRows(group, d);
-    const agents = new Set(group.map((r) => r.agent)).size, principals = new Set(group.map((r) => r.principal)).size;
+    const agents = new Set(group.map((r) => r.agent)).size;
     body += `<tr class="dp0"><td title="${esc(d)}"><button class="tg" data-dtg="${esc(d)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(d)}</td>`
-      + `<td>${open ? "" : `<span class="dash">${plural(agents, "agent")}</span>`}</td><td>${open ? "" : `<span class="dash">${plural(principals, "principal")}</span>`}</td>`
+      + `<td>${open ? "" : `<span class="dash">${plural(agents, "agent")}</span>`}</td>`
       + nums(tot, `data-d="${esc(d)}"`) + "</tr>";
-    if (open) body += group.map((r) => `<tr class="dp1"><td></td><td title="${esc(r.agent)}">${esc(r.agent)}</td><td title="${esc(r.principal)}">${esc(r.principal)}</td>`
-      + nums(r, `data-d="${esc(r.depot)}" data-ag="${esc(r.agent)}" data-p="${esc(r.principal)}"`) + "</tr>").join("");
+    if (open) body += group.map((r) => `<tr class="dp1"><td></td><td title="${esc(r.agent)}">${esc(r.agent)}</td>`
+      + nums(r, `data-d="${esc(r.depot)}" data-ag="${esc(r.agent)}"`) + "</tr>").join("");
   }
   const allDepots = [...new Set(rows.map((r) => r.depot))];
   $("mrDepotToggleAll").textContent = allDepots.length && allDepots.every((d) => mr.depotOpen.has(d)) ? "Collapse all" : "Expand all";
-  $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th>Principal</th><th class="rt">Grand Total</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
-    <tbody>${body || '<tr><td colspan="9" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
-    <tfoot><tr><td>GRAND TOTAL</td><td></td><td></td><td>${n0(grand.total)}</td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}</tr></tfoot>`;
+  $("mrDepotTable").innerHTML = `<thead><tr><th>Depot Name</th><th>Depot Agent</th><th class="rt">Grand Total</th>${DEPOT_COLS.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead>
+    <tbody>${body || '<tr><td colspan="8" style="text-align:center;padding:30px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>'}</tbody>
+    <tfoot><tr><td>GRAND TOTAL</td><td></td><td>${n0(grand.total)}</td>${DEPOT_COLS.map(([k]) => `<td>${n0(grand[k])}</td>`).join("")}</tr></tfoot>`;
 }
 $("mrDepotSearch").oninput = (e) => { mr.depotQ = e.target.value; renderDepot(); };   // matching depots open while searching
 $("mrDepotToggleAll").onclick = () => {
@@ -2327,13 +2285,13 @@ $("mrDepotTable").onclick = (e) => {
   const tg = e.target.closest("[data-dtg]");
   if (tg) { const d = tg.dataset.dtg; mr.depotOpen.has(d) ? mr.depotOpen.delete(d) : mr.depotOpen.add(d); return renderDepot(); }
   const b = e.target.closest("button.num"); if (!b) return;
-  const { d, ag, p, c } = b.dataset;
+  const { d, ag, c } = b.dataset;
   const label = (DEPOT_COLS.find(([k]) => k === c) || [])[1] || "All";
-  openTanks({ title: [d, ag, label].filter(Boolean).join(" › "), depot: d, agent: ag, principal: p, depotCol: c || "any" });
+  openTanks({ title: [d, ag, label].filter(Boolean).join(" › "), depot: d, agent: ag, depotCol: c || "any" });
 };
 $("mrDepotXlsx").onclick = () => {
   const rows = depotRows(), out = [];
-  const conv = (r) => ({ "Depot Name": r.depot, "Depot Agent": r.agent, Principal: r.principal, "Grand Total": r.total,
+  const conv = (r) => ({ "Depot Name": r.depot, "Depot Agent": r.agent, "Grand Total": r.total,
     ...Object.fromEntries(DEPOT_COLS.map(([k, l]) => [l, r[k]])) });
   let i = 0;
   while (i < rows.length) {
@@ -2343,7 +2301,7 @@ $("mrDepotXlsx").onclick = () => {
     if (group.length > 1) out.push(conv({ ...sumRows(group, `${d} — TOTAL`) }));
   }
   out.push(conv(sumRows(rows, "GRAND TOTAL")));
-  writeXlsx(`SAR_Depot_Report_${todayIso()}.xlsx`, [["Depot Report", out, [30, 34, 30, 12, 10, 14, 12, 12, 10]]]);
+  writeXlsx(`SAR_Depot_Report_${todayIso()}.xlsx`, [["Depot Report", out, [30, 34, 12, 10, 14, 12, 12, 10]]]);
 };
 
 // ---- tank list pop-up

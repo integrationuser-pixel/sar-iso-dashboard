@@ -1667,7 +1667,7 @@ function renderPivot() {
       pivotCols.push({ key: `${m}|${mon}`, m, week: isoWeekName(mon), from: d, to: end });
     }
   } else for (const { m } of months) pivotCols.push({ key: m, m, monthTotal: true });
-  pivotCols.push({ key: "__total", grand: true });
+  pivotCols.unshift({ key: "__total", grand: true });   // Grand Total right after Charge Name
 
   // one row per charge, largest first
   pivotRows = [...root.children.values()].sort((a, b) => b.total - a.total);

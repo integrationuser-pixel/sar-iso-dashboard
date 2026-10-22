@@ -286,6 +286,15 @@
   input[type=checkbox]:checked { background: var(--grad); border-color: #2C4E82; }
   input[type=checkbox]:checked::after { opacity: 1; }
   input[type=checkbox]:hover { border-color: #6488D6; }
+  .lane-radios { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+  .lane-radios .rb { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px;
+    font-size: 12.5px; font-weight: 600; color: var(--ink-soft); cursor: pointer; background: #fff; }
+  .lane-radios .rb:has(input:checked) { border-color: #2C4E82; color: var(--ink); background: #EFF4FF; }
+  input[type=radio] { appearance: none; -webkit-appearance: none; flex: none; width: 15px; height: 15px; margin: 0; border: 1.5px solid #A9B6CC; border-radius: 50%;
+    background: #fff; display: inline-grid; place-content: center; cursor: pointer; }
+  input[type=radio]::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #fff; opacity: 0; }
+  input[type=radio]:checked { background: var(--grad); border-color: #2C4E82; }
+  input[type=radio]:checked::after { opacity: 1; }
   input[type=checkbox]:focus-visible { outline: 2px solid #6488D6; outline-offset: 2px; }
   .cf-all { border-bottom: 1px solid var(--line); border-radius: 0 !important; margin-bottom: 4px; }
   .cf-list { max-height: 240px; overflow: auto; }
@@ -700,6 +709,9 @@
     <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">Top 5 lanes by net revenue (origin → destination country), excludes sundry and no-BL entries</p><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
     <section class="card panel" id="mixCard"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
   </div>
+  <section class="card panel hidden" id="portCard"><h2>Top 5 Port Pairs</h2><p class="sub" id="portSub">POL → POD by net revenue for the selected trade lane — click a bar for the invoices</p>
+    <div class="lane-radios" id="laneRadios" role="radiogroup" aria-label="Trade lane"></div>
+    <div class="chart" style="height:300px"><canvas id="portChart"></canvas></div></section>
   <div class="row rev" id="agentTrendRow">
     <section class="card panel"><h2>Top Agents</h2><p class="sub">Top 10 billing parties by net revenue</p><div class="chart" id="agentChartBox"><canvas id="agentChart"></canvas></div></section>
     <section class="card panel" id="trendCard"><h2>Revenue Trend</h2><p class="sub" id="trendSub"></p><div class="chart"><canvas id="trendChart"></canvas></div></section>
@@ -1206,7 +1218,7 @@ const state = {
   from: `${PERF_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
   mode: "table",   // opens on the Billing Details table; Chart is one click away
   currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
-  detail: "billing", detailQ: "", detailAll: false, basketsOpen: new Set(), lanesOpen: new Set(),   // Performance opens on Billing Details
+  detail: "billing", detailQ: "", detailAll: false, basketsOpen: new Set(), lanesOpen: new Set(), portLane: null,   // Performance opens on Billing Details
   charges: new Set(), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
@@ -1500,7 +1512,9 @@ function render() {
       $("laneChartBox").style.height = "340px";
       renderBar("laneChart", lanes, (name) => openDrill({ title: `Trade Lane: ${name}`, lane: name }), 44);
       const c = charts.laneChart; c.data.datasets[0].maxBarThickness = 40; c.options.scales.y.ticks.font.size = 13; c.update();
+      if (laneOnly) renderPortChart(lines, lanes.map((d) => d.name));
     }
+    $("portCard").classList.toggle("hidden", !laneOnly);
     if (!agentOnly && !laneOnly) { renderMix(k.byCat); renderTrend(lines); }
   } else {
     renderTable();
@@ -1641,6 +1655,18 @@ function renderBasketCharts(lines) {
     },
   });
 }
+
+// Trade Lane Detail chart view: pick one of the top 5 lanes (radio buttons) to see its top 5 POL → POD port pairs
+function renderPortChart(lines, lanes) {
+  if (!lanes.includes(state.portLane)) state.portLane = lanes[0] || null;
+  $("laneRadios").innerHTML = lanes.map((ln) => `<label class="rb"><input type="radio" name="portLane" value="${esc(ln)}"${ln === state.portLane ? " checked" : ""}><span>${esc(ln)}</span></label>`).join("");
+  const sel = state.portLane;
+  const ports = sel ? topBy(lines.filter((l) => laneOf(l) === sel), (l) => l.lane || "(No POL / POD)", 5) : [];
+  $("portSub").textContent = sel ? `Top 5 POL → POD for ${sel} by net revenue — click a bar for the invoices` : "No trade lanes in the selected period";
+  renderBar("portChart", ports, (p) => openDrill({ title: `${sel} › ${p}`, lane: sel, portLane: p }), 40);
+  const c = charts.portChart; c.data.datasets[0].maxBarThickness = 36; c.options.scales.y.ticks.font.size = 13; c.update();
+}
+$("laneRadios").onchange = (e) => { const v = e.target.closest("input[name=portLane]")?.value; if (v) { state.portLane = v; renderPortChart(inPeriod(), [...$("laneRadios").querySelectorAll("input")].map((i) => i.value)); } };
 
 function renderMix(byCat) {
   const data = Object.keys(byCat).map((c) => ({ name: c, value: byCat[c] })).filter((d) => d.value > 0);

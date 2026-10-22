@@ -762,9 +762,9 @@
   <div id="mrInventory" class="mr-tab">
     <div class="kpis mr-kpis" id="mrKpis"></div>
     <!-- Inventory Details: one card with the Table / Chart switch, the export button and the table or chart -->
-    <section class="card panel" id="mrDetailsCard">
+    <section class="card panel sec-collapsed" id="mrDetailsCard">   <!-- starts collapsed -->
       <div class="tools" style="justify-content:space-between">
-        <div><h2><button type="button" class="sec-tg" data-sec="mrDetailsCard" aria-expanded="true" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Inventory Details</h2><p class="sub" style="margin-bottom:0" id="mrViewSub"></p></div>
+        <div><h2><button type="button" class="sec-tg" data-sec="mrDetailsCard" aria-expanded="false" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Inventory Details</h2><p class="sub" style="margin-bottom:0" id="mrViewSub"></p></div>
         <div class="tools" style="margin:0">
           <button class="btn" id="mrPivotXlsx">Export to Excel</button>
           <div class="view-toggle" id="mrViewToggle" role="group" aria-label="Show as">
@@ -780,9 +780,9 @@
     </section>
 
   <div id="mrDepot">   <!-- Depot Report, on the same page under Total Inventory -->
-    <section class="card panel" id="mrDepotCard">
+    <section class="card panel sec-collapsed" id="mrDepotCard">   <!-- starts collapsed -->
       <div class="tools" style="justify-content:space-between">
-        <div><h2><button type="button" class="sec-tg" data-sec="mrDepotCard" aria-expanded="true" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
+        <div><h2><button type="button" class="sec-tg" data-sec="mrDepotCard" aria-expanded="false" title="Collapse / expand"><span class="chev" aria-hidden="true"></span></button>Depot Report</h2><p class="sub" style="margin-bottom:0" id="mrDepotSub">Tanks at a depot (to-location of the latest movement)</p></div>
         <div class="tools" style="margin:0">
           <input class="search" id="mrDepotSearch" placeholder="Search depot or agent…">
           <button class="btn" id="mrDepotToggleAll">Expand all</button>

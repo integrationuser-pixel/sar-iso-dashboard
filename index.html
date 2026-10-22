@@ -1779,9 +1779,10 @@ const mr = { data: null, tab: store.get("sar.mrTab", "inventory"), mode: store.g
 const n0 = (v) => Number(v || 0).toLocaleString("en-IN");
 const DAY_MS = 86400000;
 const idleDays = (t) => (t.date ? Math.max(0, Math.floor((Date.now() - new Date(t.date + "T00:00")) / DAY_MS)) : null);
-// Tanks whose latest activity is OFF HIRE have gone back to the lessor, so M&R Operations leaves them out.
-const OFF_HIRE = "OFF HIRE";
-const mrTanks = () => (mr.data?.tanks || []).filter((t) => t.activity !== OFF_HIRE && (!mr.principal || t.principal === mr.principal));
+// Tanks whose latest activity is OFF HIRE have gone back to the lessor. They are included for now (EXCLUDE_OFF_HIRE = false);
+// set it to true to leave them out of M&R Operations again.
+const OFF_HIRE = "OFF HIRE", EXCLUDE_OFF_HIRE = false;
+const mrTanks = () => (mr.data?.tanks || []).filter((t) => !(EXCLUDE_OFF_HIRE && t.activity === OFF_HIRE) && (!mr.principal || t.principal === mr.principal));
 
 function setMrData(d) {
   mr.data = d;
@@ -1813,7 +1814,7 @@ function renderMr() {
   $("mrTitle").textContent = mr.tab === "depot" ? "Depot Report" : "Total Inventory";
   const synced = mr.data.lastSync ? new Date(mr.data.lastSync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "never";
   const offHire = mr.data.tanks.filter((t) => t.activity === OFF_HIRE && (!mr.principal || t.principal === mr.principal)).length;
-  $("mrSub").textContent = `Latest movement per tank · ${n0(offHire)} off-hired tanks excluded · movements up to ${mr.data.dataTo ? shortDate(mr.data.dataTo) : "—"} · synced ${synced}`;
+  $("mrSub").textContent = `Latest movement per tank · ${n0(offHire)} off-hired tanks ${EXCLUDE_OFF_HIRE ? "excluded" : "included"} · movements up to ${mr.data.dataTo ? shortDate(mr.data.dataTo) : "—"} · synced ${synced}`;
   $("mrSub").title = $("mrSub").textContent;
   if (mr.tab === "depot") renderDepot(); else renderInventory();
 }

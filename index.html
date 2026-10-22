@@ -1678,7 +1678,7 @@ function renderTable() {
   const q = state.detailQ.toLowerCase();
   const filtered = q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
   const main = filtered.filter((r) => r.name !== NO_LANE), noLane = filtered.filter((r) => r.name === NO_LANE);
-  const limit = isAgent && !state.detailAll;   // every trade lane is listed; agents show the top 15 (+ Show all)
+  const limit = false;   // every agent and every trade lane is listed (no top-15 / Other row)
   let shown = limit ? main.slice(0, 15) : main;
   if (limit && main.length > 15) {
     const rest = main.slice(15), other = { name: `Other ${dim.toLowerCase()}s (${rest.length})`, cells: {}, total: 0, others: rest.map((r) => r.name) };
@@ -1700,7 +1700,7 @@ function renderTable() {
      <tbody>${shown.map((r) => `<tr${r.others || r.name === NO_LANE ? ' class="recon"' : ""}><td class="name" title="${esc(r.name)}">${esc(r.name)}</td>${buckets.map((b) => cell(r.cells[b], rowName(r), b)).join("")}${cell(r.total, rowName(r), "")}</tr>`).join("")
        || `<tr><td colspan="${2 + buckets.length}" style="text-align:center;padding:24px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>
      <tfoot><tr><td>TOTAL${q ? "" : " = Total Revenue"}</td>${buckets.map((b) => cell(totals.cells[b], "", b)).join("")}${cell(totals.total, "", "")}</tr></tfoot>`;
-  $("detailMore").classList.toggle("hidden", !isAgent || main.length <= 15);
+  $("detailMore").classList.add("hidden");
   $("detailMore").textContent = state.detailAll ? "Show top 15" : `Show all ${main.length}`;
 }
 $("detailTable").onclick = (e) => {

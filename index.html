@@ -1068,9 +1068,9 @@ const monthEnd = (m) => lastOfMonth(+m.slice(0, 4), +m.slice(5, 7) - 1);
 const state = {
   lines: [], lastSync: null, view: "monthly", periodKey: "",
   from: `${DEFAULT_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
-  mode: store.get("sar.salesMode", "table") === "chart" ? "chart" : "table",
+  mode: "table",   // opens on the Billing Details table; Chart is one click away
   currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
-  detail: null, detailQ: "", detailAll: false,   // null = Performance clicked, nothing picked yet (blank page)
+  detail: "billing", detailQ: "", detailAll: false,   // Performance opens on Billing Details
   charges: new Set(DEFAULT_CHARGES), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
@@ -1179,7 +1179,9 @@ for (const n of document.querySelectorAll(".side nav")) n.onclick = (e) => {
   const perf = a.dataset.page === "sales";
   if (a.dataset.detail) {   // Performance sub-item: open that table
     Object.assign(state, { detail: a.dataset.detail, mode: "table", detailQ: "", detailAll: false }); $("detailSearch").value = "";
-  } else if (perf) { state.detail = null; perfOpen = true; }   // Performance itself: blank page, sub-items shown
+  } else if (perf) {   // Performance itself: Billing Details, sub-items shown
+    Object.assign(state, { detail: "billing", mode: "table", detailQ: "", detailAll: false }); $("detailSearch").value = ""; perfOpen = true;
+  }
   route(a.dataset.page);
   if (perf && state.lines.length) render();
   if (a.dataset.detail) $("tableView").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1352,7 +1354,7 @@ function render() {
 }
 $("viewToggle").onclick = (e) => {
   const m = e.target.closest("button")?.dataset.mode;
-  if (m && m !== state.mode) { state.mode = m; store.set("sar.salesMode", m); render(); }
+  if (m && m !== state.mode) { state.mode = m; render(); }
 };
 $("kpis").onclick = (e) => { const b = e.target.closest(".kpi"); if (b) { const c = b.dataset.cat || undefined; openDrill(c ? { title: MAIN_CATS.includes(c) ? `${c} Revenue` : catLabel(c), category: c } : { title: "Total Revenue — all charges", allCharges: true }); } };
 

@@ -656,7 +656,7 @@
 
   <div id="chartView" class="hidden">
   <div class="row">
-    <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">Top 10 lanes (origin → destination country), excludes sundry and no-BL entries</p><div class="chart"><canvas id="laneChart"></canvas></div></section>
+    <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">All lanes (origin → destination country), excludes sundry and no-BL entries</p><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
     <section class="card panel"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
   </div>
   <div class="row rev">
@@ -1343,7 +1343,9 @@ function render() {
     ? "Trade lanes, revenue mix, top agents and trend for the selected period — click any bar or point for the invoices."
     : "Billing details, agent and trade lane tables for the selected period — click any number for the invoices.";
   if (chart) {
-    renderBar("laneChart", topBy(lines, laneOf), (name) => openDrill({ title: `Trade Lane: ${name}`, lane: name }));
+    const lanes = topBy(lines, laneOf, Infinity);
+    $("laneChartBox").style.height = `${Math.max(340, lanes.length * 24 + 40)}px`;   // room for every lane
+    renderBar("laneChart", lanes, (name) => openDrill({ title: `Trade Lane: ${name}`, lane: name }), 44);
     renderBar("agentChart", topBy(lines, (l) => l.agent), (name) => openDrill({ title: `Agent: ${name}`, agent: name }), 20);
     renderMix(k.byCat);
     renderTrend(lines);
@@ -1470,8 +1472,9 @@ function renderTable() {
   const q = state.detailQ.toLowerCase();
   const filtered = q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
   const main = filtered.filter((r) => r.name !== NO_LANE), noLane = filtered.filter((r) => r.name === NO_LANE);
-  let shown = state.detailAll ? main : main.slice(0, 15);
-  if (!state.detailAll && main.length > 15) {
+  const limit = isAgent && !state.detailAll;   // every trade lane is listed; agents show the top 15 (+ Show all)
+  let shown = limit ? main.slice(0, 15) : main;
+  if (limit && main.length > 15) {
     const rest = main.slice(15), other = { name: `Other ${dim.toLowerCase()}s (${rest.length})`, cells: {}, total: 0, others: rest.map((r) => r.name) };
     for (const r of rest) { other.total += r.total; for (const [b, v] of Object.entries(r.cells)) other.cells[b] = (other.cells[b] || 0) + v; }
     shown = [...shown, other];
@@ -1491,7 +1494,7 @@ function renderTable() {
      <tbody>${shown.map((r) => `<tr${r.others || r.name === NO_LANE ? ' class="recon"' : ""}><td class="name" title="${esc(r.name)}">${esc(r.name)}</td>${buckets.map((b) => cell(r.cells[b], rowName(r), b)).join("")}${cell(r.total, rowName(r), "")}</tr>`).join("")
        || `<tr><td colspan="${2 + buckets.length}" style="text-align:center;padding:24px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>
      <tfoot><tr><td>TOTAL${q ? "" : " = Total Revenue"}</td>${buckets.map((b) => cell(totals.cells[b], "", b)).join("")}${cell(totals.total, "", "")}</tr></tfoot>`;
-  $("detailMore").classList.toggle("hidden", main.length <= 15);
+  $("detailMore").classList.toggle("hidden", !isAgent || main.length <= 15);
   $("detailMore").textContent = state.detailAll ? "Show top 15" : `Show all ${main.length}`;
 }
 $("detailTable").onclick = (e) => {

@@ -712,8 +712,7 @@
   <div class="perf-blank hidden" id="perfBlank">Pick <b>Billing Details</b>, <b>Agent Detail</b> or <b>Trade Lane Detail</b> under Performance in the menu.</div>
   <div class="kpis" id="kpis"></div>
 
-  <div class="card viewbar" id="perfViewbar">
-    <div><h2 id="viewTitle">Revenue Details</h2><p class="sub" id="viewSub"></p></div>
+  <div class="hidden" id="toggleHome">   <!-- holds the Table / Chart switch until render() places it in a heading -->
     <div class="view-toggle" id="viewToggle" role="group" aria-label="Show as">
       <button data-mode="table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>Table</button>
       <button data-mode="chart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Chart</button>
@@ -722,21 +721,21 @@
 
   <div id="chartView" class="hidden">
   <div id="basketCharts" class="hidden">
-    <section class="card panel"><h2>Total Revenue</h2><p class="sub" id="bkStackSub">Net revenue per month — click a point for the invoices</p>
+    <section class="card panel"><div class="tools" style="justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><h2>Total Revenue</h2><p class="sub" id="bkStackSub" style="margin-bottom:0">Net revenue per month — click a point for the invoices</p></div><span id="toggleSlotBilling"></span></div>
       <div class="chart" style="height:380px"><canvas id="bkStackChart"></canvas></div></section>
     <section class="card panel"><h2>Basket Share</h2><p class="sub">Net revenue by basket for the selected period, largest first — click a bar for the invoices</p><div class="chart" style="height:300px"><canvas id="bkShareChart"></canvas></div></section>
     <section class="card panel"><h2>Top 5 Charges</h2><p class="sub">The 5 charges with the most net revenue (hover for its basket) — click a bar for the invoices</p><div class="chart" id="bkChargeBox" style="height:260px"><canvas id="bkChargeChart"></canvas></div></section>
   </div>
   <div id="generalCharts">   <!-- Agent Detail / Trade Lane Detail chart view (not shown for Billing Details) -->
   <div class="row" id="laneMixRow">
-    <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">Top 5 lanes by net revenue (origin → destination country), excludes sundry and no-BL entries</p><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
+    <section class="card panel"><div class="tools" style="justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><h2>Revenue by Trade Lane</h2><p class="sub" style="margin-bottom:0">Top 5 lanes by net revenue (origin → destination country), excludes sundry and no-BL entries</p></div><span id="toggleSlotLane"></span></div><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
     <section class="card panel" id="mixCard"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
   </div>
   <section class="card panel hidden" id="portCard"><h2>Top 5 Port Pairs</h2><p class="sub" id="portSub">POL → POD by net revenue for the selected trade lane — click a bar for the invoices</p>
     <div class="lane-radios" id="laneRadios" role="radiogroup" aria-label="Trade lane"></div>
     <div class="chart" style="height:300px"><canvas id="portChart"></canvas></div></section>
   <div class="row rev" id="agentTrendRow">
-    <section class="card panel"><h2>Top Agents</h2><p class="sub">Top 10 billing parties by net revenue</p><div class="chart" id="agentChartBox"><canvas id="agentChart"></canvas></div></section>
+    <section class="card panel"><div class="tools" style="justify-content:space-between;align-items:flex-start;margin-bottom:10px"><div><h2>Top Agents</h2><p class="sub" style="margin-bottom:0">Top 10 billing parties by net revenue</p></div><span id="toggleSlotAgent"></span></div><div class="chart" id="agentChartBox"><canvas id="agentChart"></canvas></div></section>
     <section class="card panel" id="trendCard"><h2>Revenue Trend</h2><p class="sub" id="trendSub"></p><div class="chart"><canvas id="trendChart"></canvas></div></section>
   </div>
   </div>
@@ -1486,7 +1485,7 @@ function render() {
   markPerfSub();
   const blank = !state.detail;
   $("perfBlank").classList.toggle("hidden", !blank);
-  for (const id of ["kpis", "perfViewbar", "footnote"]) $(id).classList.toggle("hidden", blank);
+  for (const id of ["kpis", "footnote"]) $(id).classList.toggle("hidden", blank);
   if (currentPage === "sales") $("filters").classList.toggle("hidden", blank);
   if (blank) { $("chartView").classList.add("hidden"); $("tableView").classList.add("hidden"); return; }
   renderFilters();
@@ -1507,11 +1506,8 @@ function render() {
   $("chartView").classList.toggle("hidden", !chart);
   $("tableView").classList.toggle("hidden", chart);
   for (const b of $("viewToggle").children) b.setAttribute("aria-pressed", b.dataset.mode === state.mode);
-  // The Table / Chart switch sits in the table's heading in Table view, and in a heading bar above the charts in Chart view
-  (chart ? $("perfViewbar") : $("toggleSlotTable")).appendChild($("viewToggle"));
-  $("perfViewbar").classList.toggle("hidden", !chart);
-  $("viewTitle").textContent = { billing: "Billing Details", agent: "Agent Detail", lane: "Trade Lane Detail" }[state.detail] || "Charts";
-  $("viewSub").textContent = "Charts for the selected period — click any bar or point for the invoices.";
+  // The Table / Chart switch sits in the table's heading in Table view, and in the first chart's heading in Chart view
+  $(chart ? { billing: "toggleSlotBilling", agent: "toggleSlotAgent", lane: "toggleSlotLane" }[state.detail] : "toggleSlotTable").appendChild($("viewToggle"));
   $("basketCharts").classList.toggle("hidden", !chart || state.detail !== "billing");
   if (chart && state.detail === "billing") renderBasketCharts(lines);
   $("generalCharts").classList.toggle("hidden", state.detail === "billing");

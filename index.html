@@ -656,7 +656,7 @@
 
   <div id="chartView" class="hidden">
   <div class="row">
-    <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">Top 10 lanes (POL → POD), excludes sundry and no-BL entries</p><div class="chart"><canvas id="laneChart"></canvas></div></section>
+    <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">Top 10 lanes (origin → destination country), excludes sundry and no-BL entries</p><div class="chart"><canvas id="laneChart"></canvas></div></section>
     <section class="card panel"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
   </div>
   <div class="row rev">
@@ -1049,15 +1049,17 @@ function trendTable(lines, key, buckets, g) {
   return { rows: [...m.values()].sort((a, b) => b.total - a.total), totals };
 }
 const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || catOf(l) === f.category)
-  && (f.agent === undefined || l.agent === f.agent) && (!f.lane || l.lane === f.lane)
+  && (f.agent === undefined || l.agent === f.agent) && (!f.lane || laneOf(l) === f.lane)
   && (f.charge === undefined || l.charge === f.charge) && (f.shipper === undefined || l.shipper === f.shipper)
   && (f.pol === undefined || l.pol === f.pol) && (f.pod === undefined || l.pod === f.pod)
-  && (!f.noLane || !l.lane) && (!f.agentsIn || f.agentsIn.has(l.agent)) && (!f.lanesIn || f.lanesIn.has(l.lane)) && (!f.notCharges || !f.notCharges.has(l.charge));
+  && (!f.noLane || !laneOf(l)) && (!f.agentsIn || f.agentsIn.has(l.agent)) && (!f.lanesIn || f.lanesIn.has(laneOf(l))) && (!f.notCharges || !f.notCharges.has(l.charge));
 
 // ============================================================ state
 const VIEWS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"], ["custom", "Custom Range"]];
 // Billing Details shows these charges until the viewer changes the Charges filter.
 const NO_LANE = "(No trade lane — invoices without a BL)";
+// Trade lanes are origin → destination country (from the invoice's job); POL → POD stays in the invoice pop-up.
+function laneOf(l) { return l.countryLane || l.lane || null; }
 const nOtherLabel = () => (allChargesOn() ? "Total Revenue" : "Total Revenue — selected charges");
 let detailOthers = [];
 const DEFAULT_CHARGES = ["TANK RENT", "IMPORT DETENTION CHARGES", "LEASE RENT CHARGES", "EXPORT DETENTION CHARGES", "OCEAN FREIGHT CHARGES"];
@@ -1341,7 +1343,7 @@ function render() {
     ? "Trade lanes, revenue mix, top agents and trend for the selected period — click any bar or point for the invoices."
     : "Billing details, agent and trade lane tables for the selected period — click any number for the invoices.";
   if (chart) {
-    renderBar("laneChart", topBy(lines, (l) => l.lane), (name) => openDrill({ title: `Trade Lane: ${name}`, lane: name }));
+    renderBar("laneChart", topBy(lines, laneOf), (name) => openDrill({ title: `Trade Lane: ${name}`, lane: name }));
     renderBar("agentChart", topBy(lines, (l) => l.agent), (name) => openDrill({ title: `Agent: ${name}`, agent: name }), 20);
     renderMix(k.byCat);
     renderTrend(lines);
@@ -1463,7 +1465,7 @@ function renderTable() {
   const dim = isAgent ? "Agent" : "Trade Lane";
   // Every revenue line is in a row, so the rows add up to Total Revenue: lines without a trade lane
   // (no BL — sub-lease, sundry …) get their own row, and agents beyond the top 15 are summed into "Other agents".
-  const { rows: all, totals } = trendTable(inPeriod(), isAgent ? (l) => l.agent : (l) => l.lane || NO_LANE, buckets, gr);
+  const { rows: all, totals } = trendTable(inPeriod(), isAgent ? (l) => l.agent : (l) => laneOf(l) || NO_LANE, buckets, gr);
   const rows = [...all.filter((r) => r.name !== NO_LANE), ...all.filter((r) => r.name === NO_LANE)];
   const q = state.detailQ.toLowerCase();
   const filtered = q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
@@ -1478,7 +1480,7 @@ function renderTable() {
   detailOthers = shown.find((r) => r.others)?.others || [];
 
   $("detailTitle").textContent = `${dim} Detail`;
-  $("detailSub").textContent = `Net revenue per ${gr}; click any number for the invoices behind it`;
+  $("detailSub").textContent = `Net revenue per ${gr}${isAgent ? "" : " by origin → destination country (from the job)"}; click any number for the invoices behind it`;
   $("detailSearch").placeholder = `Search ${dim.toLowerCase()}…`;
   $("detailCount").textContent = `${filtered.length} ${dim.toLowerCase()}s`;
   const cell = (v, name, b) => `<td>${v ? `<button class="num${v < 0 ? " neg" : ""}" data-n="${esc(name ?? "")}" data-b="${b ?? ""}">${money(v)}</button>` : '<span class="dash">–</span>'}</td>`;
@@ -1729,14 +1731,14 @@ function openDrill(f) {
 function drillRows() {
   const f = state.drill, q = state.drillQ.toLowerCase();
   const base = state.lines.filter((l) => matches(l, f) && (f.notCharges || f.allCharges || f.charge !== undefined || state.charges.has(l.charge)));
-  return q ? base.filter((l) => [l.invoiceNo, l.agent, l.lane || "", l.charge, l.blNo, l.jobNo].some((v) => v.toLowerCase().includes(q))) : base;
+  return q ? base.filter((l) => [l.invoiceNo, l.agent, l.lane || "", l.countryLane || "", l.charge, l.blNo, l.jobNo].some((v) => v.toLowerCase().includes(q))) : base;
 }
 function renderDrill() {
   const f = state.drill, rows = drillRows(), total = rows.reduce((s, l) => s + l.amount, 0);
   $("mTitle").textContent = f.title;
   $("mSub").textContent = `${shortDate(f.from)} – ${shortDate(f.to)} · ${new Set(rows.map((l) => l.invoiceId)).size} documents · ${rows.length} charge lines · Net ${money(total)}`;
   const pill = (t) => `<span class="pill${t === "Credit Note" ? " cn" : t === "Debit Note" ? " dn" : ""}">${t}</span>`;
-  $("mTable").innerHTML = `<thead><tr><th>Date</th><th>Invoice No</th><th>Type</th><th>Agent</th><th>Trade Lane</th><th>Charge</th><th>Category</th><th>BL No</th><th class="amt">Amount</th></tr></thead><tbody>`
+  $("mTable").innerHTML = `<thead><tr><th>Date</th><th>Invoice No</th><th>Type</th><th>Agent</th><th>POL → POD</th><th>Charge</th><th>Category</th><th>BL No</th><th class="amt">Amount</th></tr></thead><tbody>`
     + (rows.slice(0, state.drillLimit).map((l) => `<tr><td>${shortDate(l.date)}</td><td class="mono">${esc(l.invoiceNo)}</td><td>${pill(l.docType)}</td>
         <td class="name" title="${esc(l.agent)}">${esc(l.agent)}</td><td>${l.lane ? esc(l.lane) : '<span class="dash">—</span>'}</td>
         <td class="name" title="${esc(l.charge)}">${esc(l.charge)}</td><td><span class="dot" style="background:${catColor(catOf(l))}"></span> ${esc(catLabel(catOf(l)))}</td>
@@ -1757,8 +1759,8 @@ document.addEventListener("keydown", (e) => {
 });
 $("mCsv").onclick = () => {
   const q = (v) => `"${String(v).replace(/"/g, '""')}"`;
-  const head = ["Invoice Date", "Invoice No", "Type", "Agent", "Trade Lane", "Charge", "Category", "BL No", "Job No", "Amount USD"];
-  const body = drillRows().map((l) => [l.date, l.invoiceNo, l.docType, l.agent, l.lane || "", l.charge, catLabel(catOf(l)), l.blNo, l.jobNo, l.amount.toFixed(2)].map(q).join(","));
+  const head = ["Invoice Date", "Invoice No", "Type", "Agent", "Country Lane", "POL → POD", "Charge", "Category", "BL No", "Job No", "Amount USD"];
+  const body = drillRows().map((l) => [l.date, l.invoiceNo, l.docType, l.agent, l.countryLane || "", l.lane || "", l.charge, catLabel(catOf(l)), l.blNo, l.jobNo, l.amount.toFixed(2)].map(q).join(","));
   const url = URL.createObjectURL(new Blob([[head.join(","), ...body].join("\n")], { type: "text/csv" }));
   Object.assign(document.createElement("a"), { href: url, download: state.drill.title.replace(/[^\w]+/g, "_") + ".csv" }).click();
   URL.revokeObjectURL(url);

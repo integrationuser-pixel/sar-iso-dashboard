@@ -142,6 +142,8 @@ const OLD_COMPANY = "SAR LOGISOLUTIONS PTE. LTD.";
 const OLD_COMPANY_MONTHS = ["2026-01"];
 const keepCompany = (company, date) => SALES_COMPANIES.includes(company) || (company === OLD_COMPANY && OLD_COMPANY_MONTHS.includes(String(date).slice(0, 7)));
 const SUNDRY = new Set(["SDI"]);
+const COUNTRY_FIX = { "SOUTH ,KOREA": "South Korea" };   // SARFD spelling slips
+const tidyCountry = (v) => { const c = s(v).replace(/\s+/g, " "); return COUNTRY_FIX[c.toUpperCase()] || c; };
 const CATEGORIES = ["Lease", "Detention", "EXIM", "M&R", "Other"];
 const s = (v) => (typeof v === "string" ? v.trim() : "");
 const normCharge = (v) => s(v).toUpperCase();
@@ -153,6 +155,13 @@ async function buildSales(db, mappings, lastSync) {
     { projection: { _id: 0, companyName: 1, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, lineNo: 1, chargeName: 1,
         chargeTotalAmountHc: 1, billingPartyName: 1, shipperName: 1, polName: 1, podName: 1, blNo: 1, jobNo: 1 } },
   ).toArray();
+  // Trade lane by country: the invoice's job (tblJob.jobNo) carries origin and destination country.
+  // Checked 2026-10-22: every line with a POL → POD lane has a job with both countries, and they match the BL's POL / POD countries.
+  const jobCountries = new Map();
+  for (const j of await db.collection("tblJob").find({ jobNo: { $nin: [null, ""] } }, { projection: { _id: 0, jobNo: 1, originCountryName: 1, destinationCountryName: 1 } }).toArray()) {
+    const o = tidyCountry(j.originCountryName), d = tidyCountry(j.destinationCountryName), k = s(j.jobNo).toUpperCase();
+    if (o && d && !jobCountries.has(k)) jobCountries.set(k, `${o} → ${d}`);
+  }
 
   const lines = [];
   for (const r of rows) {
@@ -173,6 +182,7 @@ async function buildSales(db, mappings, lastSync) {
       shipper: s(r.shipperName),
       pol, pod,
       lane: blNo && pol && pod && !SUNDRY.has(r.voucherCode) ? `${pol} → ${pod}` : null,
+      countryLane: blNo && pol && pod && !SUNDRY.has(r.voucherCode) ? jobCountries.get(s(r.jobNo).toUpperCase()) || null : null,
       blNo,
       jobNo: s(r.jobNo),
     });
@@ -184,7 +194,7 @@ async function buildSales(db, mappings, lastSync) {
 // The Atlas cluster downloads slowly (~100 KB/s), so the built dataset is kept gzipped in
 // `dashboardCache` and rebuilt only after a new tblInvoice sync or a charge-mapping change.
 const TTL_MS = 2 * 60 * 1000;
-const SNAPSHOT_ID = "sales-html-v4";
+const SNAPSHOT_ID = "sales-html-v5";
 
 async function salesDataset() {
   if (g._sarSales && Date.now() - g._sarSales.at < TTL_MS) return g._sarSales.data;

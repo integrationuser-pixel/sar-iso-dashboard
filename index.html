@@ -677,7 +677,7 @@
 
   <div id="chartView" class="hidden">
   <div id="basketCharts" class="hidden">
-    <section class="card panel"><h2>Revenue by Basket</h2><p class="sub" id="bkStackSub">Net revenue per month: total and by charge basket — click a point for the invoices</p>
+    <section class="card panel"><h2>Total Revenue</h2><p class="sub" id="bkStackSub">Net revenue per month — click a point for the invoices</p>
       <div class="chart" style="height:380px"><canvas id="bkStackChart"></canvas></div></section>
     <section class="card panel"><h2>Basket Share</h2><p class="sub">Net revenue by basket for the selected period, largest first — click a bar for the invoices</p><div class="chart" style="height:300px"><canvas id="bkShareChart"></canvas></div></section>
     <section class="card panel"><h2>Top 5 Charges</h2><p class="sub">The 5 charges with the most net revenue (hover for its basket) — click a bar for the invoices</p><div class="chart" id="bkChargeBox" style="height:260px"><canvas id="bkChargeChart"></canvas></div></section>
@@ -1559,28 +1559,21 @@ function renderBasketCharts(lines) {
   const per = gr === "week" ? "week" : gr === "day" ? "day" : "month";
   const hover = (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; };
 
-  // 1. Total Revenue line (bold) plus one line per basket across the months / weeks
-  $("bkStackSub").textContent = `Net revenue per ${per}: total and by charge basket — click a point for the invoices`;
+  // 1. Total Revenue line across the months / weeks
+  $("bkStackSub").textContent = `Net revenue per ${per} — click a point for the invoices`;
   const has = buckets.map((b) => baskets.some((x) => cell.has(`${x}|${b}`)));   // months with no billing at all stay blank
   const tot = buckets.map((b) => baskets.reduce((s, bk) => s + (cell.get(`${bk}|${b}`) || 0), 0));
-  const amt = (di, i) => (di === 0 ? tot[i] : cell.get(`${baskets[di - 1]}|${buckets[i]}`) || 0);   // dataset 0 = Total
   charts.bkStack?.destroy();
   charts.bkStack = new Chart($("bkStackChart"), {
     type: "line",
-    data: { labels: buckets.map((b) => bucketLabel(b, gr)), datasets: [
-      { label: "Total Revenue", data: buckets.map((b, i) => (has[i] ? conv(tot[i]) : null)), borderColor: "#0B1F4D", backgroundColor: "#0B1F4D",
-        borderWidth: 3, pointRadius: 4, pointHoverRadius: 6, tension: 0.25 },
-      ...baskets.map((bk) => ({ label: bk, data: buckets.map((b, i) => (has[i] ? conv(cell.get(`${bk}|${b}`) || 0) : null)),
-        borderColor: basketColor(bk), backgroundColor: basketColor(bk), borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0.25 }))] },
+    data: { labels: buckets.map((b) => bucketLabel(b, gr)), datasets: [{ label: "Total Revenue", data: buckets.map((b, i) => (has[i] ? conv(tot[i]) : null)),
+      borderColor: CHART_BLUE, backgroundColor: CHART_BLUE, borderWidth: 3, pointRadius: 4, pointHoverRadius: 6, tension: 0.25 }] },
     options: {
-      maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, layout: { padding: { top: 18, right: 12 } },
-      scales: { x: { grid: { display: false } }, y: yMoney },
-      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10 } },
-                 tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${money(amt(c.datasetIndex, c.dataIndex))}` } },
-                 valueLabels: buckets.length <= 12 ? { format: (_, i, di) => { const v = amt(di, i); return di === 0 || Math.abs(v) >= 20000 ? moneyShort(v) : ""; } } : undefined },
-      onClick: (_, els) => { if (!els[0]) return; const di = els[0].datasetIndex, b = buckets[els[0].index];
-        if (di === 0) return openDrill({ title: `Total Revenue — ${bucketLabel(b, gr)}`, ...bucketSpan(b) });
-        const bk = baskets[di - 1]; openDrill({ title: `${bk} — ${bucketLabel(b, gr)}`, basket: bk, ...bucketSpan(b) }); },
+      maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false }, layout: { padding: { top: 22, right: 16 } },
+      scales: { x: { grid: { display: false } }, y: { ...yMoney, beginAtZero: true } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `Total Revenue: ${money(tot[c.dataIndex])}` } },
+                 valueLabels: buckets.length <= 18 ? { format: (_, i) => moneyShort(tot[i]) } : undefined },
+      onClick: (_, els) => { if (!els[0]) return; const b = buckets[els[0].index]; openDrill({ title: `Total Revenue — ${bucketLabel(b, gr)}`, ...bucketSpan(b) }); },
       onHover: hover,
     },
   });

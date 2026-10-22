@@ -174,7 +174,7 @@
   #tableView { animation: viewFadeIn .35s ease both; }
   .row { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
   #basketCharts, #generalCharts { display: grid; gap: 20px; }
-  .row.solo { grid-template-columns: 1fr; }
+  .row.solo, .row.rev.solo { grid-template-columns: 1fr; }
   #basketCharts.hidden { display: none; }
   .legend .lg { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-soft); }
   .row.rev { grid-template-columns: 1fr 2fr; }
@@ -689,7 +689,7 @@
     <section class="card panel"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
   </div>
   <div class="row rev" id="agentTrendRow">
-    <section class="card panel"><h2>Top Agents</h2><p class="sub">Top 10 billing parties by net revenue</p><div class="chart"><canvas id="agentChart"></canvas></div></section>
+    <section class="card panel"><h2>Top Agents</h2><p class="sub">Top 10 billing parties by net revenue</p><div class="chart" id="agentChartBox"><canvas id="agentChart"></canvas></div></section>
     <section class="card panel" id="trendCard"><h2>Revenue Trend</h2><p class="sub" id="trendSub"></p><div class="chart"><canvas id="trendChart"></canvas></div></section>
   </div>
   </div>
@@ -1472,8 +1472,12 @@ function render() {
   $("laneMixRow").classList.toggle("hidden", agentOnly);
   $("trendCard").classList.toggle("hidden", agentOnly);
   $("agentTrendRow").classList.toggle("solo", agentOnly);
+  $("agentChartBox").style.height = agentOnly ? "560px" : "";   // bigger when it is the only chart
   if (chart && state.detail !== "billing") {
-    renderBar("agentChart", topBy(lines, (l) => l.agent), (name) => openDrill({ title: `Agent: ${name}`, agent: name }), 20);
+    renderBar("agentChart", topBy(lines, (l) => l.agent), (name) => openDrill({ title: `Agent: ${name}`, agent: name }), agentOnly ? 40 : 20);
+    if (agentOnly) {   // larger chart: thicker bars and bigger labels
+      const c = charts.agentChart; c.data.datasets[0].maxBarThickness = 40; c.options.scales.y.ticks.font.size = 13; c.update();
+    }
     if (!agentOnly) {
       const lanes = topBy(lines, laneOf, Infinity);
       $("laneChartBox").style.height = `${Math.max(340, lanes.length * 24 + 40)}px`;   // room for every lane

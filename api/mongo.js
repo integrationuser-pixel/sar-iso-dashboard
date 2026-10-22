@@ -150,6 +150,8 @@ const normCharge = (v) => s(v).toUpperCase();
 
 async function buildSales(db, mappings, lastSync) {
   const catOf = new Map(mappings.map((m) => [normCharge(m.chargeName), CATEGORIES.includes(m.revenueCategory) ? m.revenueCategory : "Other"]));
+  // Basket (Billing Details grouping) from the "Syscon Charges" sheet, loaded into chargeMappings.basket
+  const basketOf = new Map(mappings.filter((m) => s(m.basket)).map((m) => [normCharge(m.chargeName), s(m.basket)]));
   const rows = await db.collection("tblInvoice").find(
     { recordType: "C", voucherCode: { $in: Object.keys(SALES_VOUCHERS) }, companyName: { $in: [...SALES_COMPANIES, OLD_COMPANY] }, invoiceNo: { $not: /^PRO/i } },
     { projection: { _id: 0, companyName: 1, invoiceId: 1, invoiceNo: 1, invoiceDate: 1, voucherCode: 1, lineNo: 1, chargeName: 1,
@@ -177,6 +179,7 @@ async function buildSales(db, mappings, lastSync) {
       docType,
       charge,
       category: catOf.get(charge) ?? "Other",
+      basket: basketOf.get(charge) || "(Not mapped)",
       amount: (docType === "Credit Note" ? -1 : 1) * (r.chargeTotalAmountHc ?? 0),  // USD, credit notes negative
       agent: s(r.billingPartyName) || "(Unknown)",
       shipper: s(r.shipperName),
@@ -201,13 +204,13 @@ async function salesDataset() {
   const data = (async () => {
     const db = await getDb();
     const [mappings, last] = await Promise.all([
-      db.collection("chargeMappings").find({}, { projection: { _id: 0, chargeName: 1, revenueCategory: 1 } }).toArray(),
+      db.collection("chargeMappings").find({}, { projection: { _id: 0, chargeName: 1, revenueCategory: 1, basket: 1 } }).toArray(),
       db.collection("sarfdSyncHistory").findOne(
         { table: "tblInvoice", status: { $in: ["success", "warning"] }, rowsInserted: { $gt: 0 } },
         { sort: { startedAt: -1 }, projection: { startedAt: 1 } }),
     ]);
     const lastSync = last?.startedAt ? new Date(last.startedAt).toISOString() : null;
-    const mapKey = mappings.map((m) => `${normCharge(m.chargeName)}=${m.revenueCategory}`).sort().join("|");
+    const mapKey = mappings.map((m) => `${normCharge(m.chargeName)}=${m.revenueCategory}/${m.basket || ""}`).sort().join("|");
     const key = createHash("sha1").update(`${lastSync}|${mapKey}`).digest("hex");
 
     const cache = db.collection("dashboardCache");

@@ -212,6 +212,8 @@
   .pivot th.gt { background: #E4EBFA; color: var(--ink); }
   .pivot td.gt { background: var(--grand); font-weight: 700; }
   .pivot tr.lv0 td { font-weight: 700; font-size: 13px; }
+  .pivot tbody tr.bk { background: #F4F7FD; }
+  .pivot tr.bk .tg { margin-right: 8px; }
   .pivot tbody tr.lv0 { background: #fff; }
   .pivot tbody tr.lv1 { background: #FCFDFF; }
   .pivot tr.lv1 td.dim { color: var(--ink-soft); }
@@ -686,6 +688,7 @@
     <div class="tools">
       <div class="seg hidden" id="detailTabs"><button data-t="billing">Billing Details</button><button data-t="agent">Agent Detail</button><button data-t="lane">Trade Lane Detail</button></div>
       <input class="search" id="detailSearch" placeholder="Search…">
+      <button class="btn" id="basketToggle">Expand all</button>
       <span class="foot" id="detailCount"></span>
     </div>
     <div class="tbl-wrap"><table id="detailTable"></table></div>
@@ -1155,7 +1158,7 @@ function trendTable(lines, key, buckets, g) {
 }
 const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || catOf(l) === f.category)
   && (f.agent === undefined || l.agent === f.agent) && (!f.lane || laneOf(l) === f.lane)
-  && (f.charge === undefined || l.charge === f.charge) && (f.shipper === undefined || l.shipper === f.shipper)
+  && (f.charge === undefined || l.charge === f.charge) && (f.basket === undefined || l.basket === f.basket) && (f.shipper === undefined || l.shipper === f.shipper)
   && (f.pol === undefined || l.pol === f.pol) && (f.pod === undefined || l.pod === f.pod)
   && (!f.noLane || !laneOf(l)) && (!f.agentsIn || f.agentsIn.has(l.agent)) && (!f.lanesIn || f.lanesIn.has(laneOf(l))) && (!f.notCharges || !f.notCharges.has(l.charge));
 
@@ -1178,7 +1181,7 @@ const state = {
   from: `${DEFAULT_FROM_MONTH}-01`, to: monthEnd(thisMonth()),
   mode: "table",   // opens on the Billing Details table; Chart is one click away
   currency: "USD", rate: store.get("sar.inrRate", 88),   // every report opens in USD; INR lasts only until the next sign-in
-  detail: "billing", detailQ: "", detailAll: false,   // Performance opens on Billing Details
+  detail: "billing", detailQ: "", detailAll: false, basketsOpen: new Set(),   // Performance opens on Billing Details
   charges: new Set(), drill: null, drillQ: "", drillLimit: 200,
 };
 let charts = {};
@@ -1570,6 +1573,7 @@ const bucketSpan = (b) => { const e = bucketEnd(b, g()); return { from: b < stat
 function renderTable() {
   const billing = state.detail === "billing";
   if (billing) return renderPivot();
+  $("basketToggle").classList.add("hidden");
   const gr = g(), buckets = bucketRange(state.from, state.to, gr), isAgent = state.detail === "agent";
   const dim = isAgent ? "Agent" : "Trade Lane";
   // Every revenue line is in a row, so the rows add up to Total Revenue: lines without a trade lane
@@ -1647,14 +1651,20 @@ function buildPivot(lines) {
   return { root, months };
 }
 
+$("basketToggle").onclick = () => {
+  const names = [...new Set(billingLines().map((l) => l.basket || "(Not mapped)"))];
+  if (names.length && names.every((n) => state.basketsOpen.has(n))) state.basketsOpen.clear(); else for (const n of names) state.basketsOpen.add(n);
+  renderPivot();
+};
 function renderPivot() {
   const lines = billingLines();
   const { root, months } = buildPivot(lines);
   renderChargeFilter();
 
   $("detailTitle").textContent = "Billing Details";
+  $("basketToggle").classList.remove("hidden");
   const weekly = state.view === "weekly";
-  $("detailSub").textContent = `Sum of amount by charge${weekly ? " per ISO week (Monday to Sunday; weeks at the month edges show only that month's days)" : ""}. Click a charge name for its Shipper, Party, POL and POD breakdown; click any number for the invoices.`;
+  $("detailSub").textContent = `Sum of amount by charge basket and charge${weekly ? " per ISO week (Monday to Sunday; weeks at the month edges show only that month's days)" : ""}. Click a charge name for its Shipper, Party, POL and POD breakdown; click any number for the invoices.`;
   $("detailSearch").placeholder = "Search charge, shipper, party, port…";
   $("detailCount").textContent = `${root.children.size} of ${allCharges().length} charges · ${lines.length.toLocaleString("en-IN")} lines`;
   $("detailMore").classList.add("hidden");
@@ -1671,8 +1681,16 @@ function renderPivot() {
   } else for (const { m } of months) pivotCols.push({ key: m, m, monthTotal: true });
   pivotCols.unshift({ key: "__total", grand: true });   // Grand Total right after Charge Name
 
-  // one row per charge, largest first
-  pivotRows = [...root.children.values()].sort((a, b) => b.total - a.total);
+  // Charges grouped into baskets (chargeMappings.basket, from the "Syscon Charges" sheet); + on a basket shows its charges.
+  const baskets = new Map();
+  for (const n of root.children.values()) {
+    const name = state.lines.find((l) => l.charge === n.name)?.basket || "(Not mapped)";
+    let b = baskets.get(name); if (!b) baskets.set(name, b = { name, basket: name, filter: { basket: name }, label: name, cells: {}, total: 0, kids: [] });
+    b.kids.push(n); b.total += n.total; for (const [k, v] of Object.entries(n.cells)) b.cells[k] = (b.cells[k] || 0) + v;
+  }
+  const bOrder = (x) => (/^\d+/.test(x) ? +x.match(/^\d+/)[0] : 99);
+  const basketList = [...baskets.values()].sort((a, b) => bOrder(a.name) - bOrder(b.name) || a.name.localeCompare(b.name));
+  pivotRows = [];
   // The frozen corner is one cell per header row (a frozen cell spanning two rows doesn't cover the second row reliably).
   const head1 = `<th class="dim last" style="${CHARGE_COL}">Charge Name</th>`
     + pivotCols.map((c) => (c.grand ? `<th class="gt">Grand Total</th>`
@@ -1684,11 +1702,19 @@ function renderPivot() {
     const col = pivotCols[ci], cls = col.grand ? "gt" : col.monthTotal ? "mtot" : "";
     return `<td class="${cls}">${v ? `<button class="num${v < 0 ? " neg" : ""}" data-r="${i}" data-c="${ci}">${money(v)}</button>` : ""}</td>`;
   };
-  const body = pivotRows.map((n, i) => {
-    const cells = `<td class="dim last" style="${CHARGE_COL}" title="Show ${esc(n.name)} by shipper, party, POL and POD">`
-      + `<button class="charge-link" data-charge="${i}">${n.name ? esc(n.name) : '<span class="blank">(blank)</span>'}</button></td>`;
-    return `<tr class="lv0">${cells}${pivotCols.map((c, ci) => val(c.grand ? n.total : n.cells[c.key], i, ci)).join("")}</tr>`;
-  }).join("");
+  let body = "";
+  const searching = !!state.detailQ;
+  for (const b of basketList) {
+    const open = searching || state.basketsOpen.has(b.name), bi = pivotRows.push(b) - 1;
+    body += `<tr class="lv0 bk"><td class="dim last" style="${CHARGE_COL}" title="${esc(b.name)}"><button class="tg" data-bk="${esc(b.name)}" aria-expanded="${open}">${open ? "−" : "+"}</button>${esc(b.name)}`
+      + `${open ? "" : ` <span class="dash">· ${b.kids.length} charge${b.kids.length === 1 ? "" : "s"}</span>`}</td>${pivotCols.map((c, ci) => val(c.grand ? b.total : b.cells[c.key], bi, ci)).join("")}</tr>`;
+    if (open) for (const n of b.kids.sort((x, y) => y.total - x.total)) {
+      const i = pivotRows.push(n) - 1;
+      body += `<tr class="lv1"><td class="dim last" style="${CHARGE_COL};padding-left:38px" title="Show ${esc(n.name)} by shipper, party, POL and POD">`
+        + `<button class="charge-link" data-charge="${i}">${n.name ? esc(n.name) : '<span class="blank">(blank)</span>'}</button></td>${pivotCols.map((c, ci) => val(c.grand ? n.total : n.cells[c.key], i, ci)).join("")}</tr>`;
+    }
+  }
+  $("basketToggle").textContent = basketList.length && basketList.every((b) => state.basketsOpen.has(b.name)) ? "Collapse all" : "Expand all";
   pivotRows.push(root);
   // Charges not ticked in the Charges filter are added back below, so the table ends on Total Revenue.
   const q = state.detailQ.toLowerCase();
@@ -1767,6 +1793,7 @@ function pivotColRange(col) {
 }
 function pivotClick(e) {
   const t = e.target.closest("button"); if (!t) return true;
+  if (t.dataset.bk != null) { const k = t.dataset.bk; state.basketsOpen.has(k) ? state.basketsOpen.delete(k) : state.basketsOpen.add(k); renderPivot(); return false; }
   if (t.dataset.charge) { openChargeBreakdown(pivotRows[+t.dataset.charge].name); return false; }
   if (t.dataset.r) {
     const n = pivotRows[+t.dataset.r], col = pivotCols[+t.dataset.c];

@@ -278,7 +278,15 @@
   .cf-panel label:hover { background: var(--paper); }
   .cf-panel label span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cf-panel label i { font-style: normal; font-size: 11px; color: var(--ink-soft); }
-  .cf-panel input[type=checkbox] { accent-color: var(--accent); }
+  /* checkboxes: white box, filled with the dashboard's blue gradient (--grad) and a white tick when selected */
+  input[type=checkbox] { appearance: none; -webkit-appearance: none; flex: none; width: 16px; height: 16px; margin: 0; border: 1.5px solid #A9B6CC;
+    border-radius: 4px; background: #fff; display: inline-grid; place-content: center; cursor: pointer; transition: background .12s, border-color .12s; }
+  input[type=checkbox]::after { content: ""; width: 8px; height: 4.5px; border: solid #fff; border-width: 0 0 2px 2px; transform: rotate(-45deg) translate(1px, -1px);
+    opacity: 0; transition: opacity .1s; }
+  input[type=checkbox]:checked { background: var(--grad); border-color: #2C4E82; }
+  input[type=checkbox]:checked::after { opacity: 1; }
+  input[type=checkbox]:hover { border-color: #6488D6; }
+  input[type=checkbox]:focus-visible { outline: 2px solid #6488D6; outline-offset: 2px; }
   .cf-all { border-bottom: 1px solid var(--line); border-radius: 0 !important; margin-bottom: 4px; }
   .cf-list { max-height: 240px; overflow: auto; }
   .cf-more { padding: 6px 4px; font-size: 11px; color: var(--ink-soft); }

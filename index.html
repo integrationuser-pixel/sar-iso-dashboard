@@ -1851,7 +1851,7 @@ function renderPivot() {
   $("basketToggle").classList.remove("hidden");
   const weekly = state.view === "weekly";
   $("detailSub").textContent = `Sum of amount by charge basket and charge${weekly ? " per ISO week (Monday to Sunday; weeks at the month edges show only that month's days)" : ""}. Click a charge name for its Shipper, Party, POL and POD breakdown; click any number for the invoices.`;
-  $("detailSearch").placeholder = "Search charge, shipper, party, port…";
+  $("detailSearch").placeholder = "Search charges…";
   $("detailCount").textContent = `${root.children.size} of ${allCharges().length} charges · ${lines.length.toLocaleString("en-IN")} lines`;
   $("detailMore").classList.add("hidden");
 
@@ -1929,7 +1929,7 @@ function renderPivot() {
 function billingLines() {
   const q = state.detailQ.toLowerCase();
   return inPeriod().filter((l) => state.charges.has(l.charge)
-    && (!q || [l.charge, l.shipper, l.agent, l.pol, l.pod].some((v) => (v || "").toLowerCase().includes(q))));
+    && (!q || [l.charge, l.basket].some((v) => (v || "").toLowerCase().includes(q))));   // search matches charge or basket names
 }
 const allCharges = () => [...new Set(state.lines.map((l) => l.charge))].sort();
 function renderChargeFilter() {

@@ -1211,7 +1211,7 @@ const matches = (l, f) => l.date >= f.from && l.date <= f.to && (!f.category || 
 // ============================================================ state
 const VIEWS = [["monthly", "Monthly"], ["weekly", "Weekly"], ["quarterly", "Quarterly"], ["yearly", "Yearly"], ["custom", "Custom Range"]];
 // Billing Details shows these charges until the viewer changes the Charges filter.
-const NO_LANE = "(No trade lane — invoices without a BL)";
+const NO_LANE = "No Tradelane";   // invoices without a BL / POL / POD (sub-lease, sundry …)
 // Trade lanes are origin → destination country (from the invoice's job); POL → POD stays in the invoice pop-up.
 function laneOf(l) { return l.countryLane || l.lane || null; }
 const nOtherLabel = () => (allChargesOn() ? "Total Revenue" : "Total Revenue — selected charges");

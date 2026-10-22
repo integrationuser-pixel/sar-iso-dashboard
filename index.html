@@ -217,6 +217,8 @@
   .pivot td.gt { background: var(--grand); font-weight: 700; }
   .pivot tr.lv0 td { font-weight: 700; font-size: 13px; }
   .pivot tbody tr.bk { background: #F4F7FD; }
+  #detailTable:not(.pivot) th.gt { background: #E4EBFA; color: var(--ink); }
+  #detailTable:not(.pivot) td.gt { background: var(--grand); font-weight: 700; }
   #detailTable tr.lane0 td { font-weight: 700; }
   #detailTable tr.lane0 .tg { margin-right: 8px; }
   #detailTable tr.lane1 { background: #FCFDFF; }
@@ -1744,21 +1746,25 @@ function renderTable() {
   $("detailCount").textContent = `${filtered.length} ${dim.toLowerCase()}s`;
   const cell = (v, name, b) => `<td>${v ? `<button class="num${v < 0 ? " neg" : ""}" data-n="${esc(name ?? "")}" data-b="${b ?? ""}">${money(v)}</button>` : '<span class="dash">–</span>'}</td>`;
   const rowName = (r) => (r.others ? "__others" : r.name);
+  // Trade Lane Detail puts Grand Total right after the lane; Agent Detail keeps Total at the end
+  const gtFirst = !isAgent;
+  const row = (cells, total, mk) => { const gt = mk(total, "").replace("<td>", '<td class="gt">');
+    return (gtFirst ? gt : "") + buckets.map((b) => mk(cells[b], b)).join("") + (gtFirst ? "" : mk(total, "")); };
   $("detailTable").className = "";
   $("detailTable").innerHTML =
-    `<thead><tr><th>${dim}</th>${buckets.map((b) => `<th>${bucketLabel(b, gr)}</th>`).join("")}<th>Total</th></tr></thead>
+    `<thead><tr><th>${dim}</th>${gtFirst ? '<th class="gt">Grand Total</th>' : ""}${buckets.map((b) => `<th>${bucketLabel(b, gr)}</th>`).join("")}${gtFirst ? "" : "<th>Total</th>"}</tr></thead>
      <tbody>${shown.map((r) => {
        const canOpen = !isAgent && !r.others && r.name !== NO_LANE, open = canOpen && (!!q || state.lanesOpen.has(r.name));
        const tg = canOpen ? `<button class="tg" data-ln="${esc(r.name)}" aria-expanded="${open}">${open ? "−" : "+"}</button>` : "";
-       let html = `<tr class="${r.others || r.name === NO_LANE ? "recon" : canOpen ? "lane0" : ""}"><td class="name" title="${esc(r.name)}">${tg}${esc(r.name)}</td>${buckets.map((b) => cell(r.cells[b], rowName(r), b)).join("")}${cell(r.total, rowName(r), "")}</tr>`;
+       let html = `<tr class="${r.others || r.name === NO_LANE ? "recon" : canOpen ? "lane0" : ""}"><td class="name" title="${esc(r.name)}">${tg}${esc(r.name)}</td>${row(r.cells, r.total, (v, b) => cell(v, rowName(r), b))}</tr>`;
        if (open) for (const p of portsOf(r.name)) {
          const pc = (v, b) => `<td>${v ? `<button class="num${v < 0 ? " neg" : ""}" data-n="${esc(r.name)}" data-p="${esc(p.name)}" data-b="${b ?? ""}">${money(v)}</button>` : '<span class="dash">–</span>'}</td>`;
-         html += `<tr class="lane1"><td class="name" title="${esc(p.name)}">${esc(p.name)}</td>${buckets.map((b) => pc(p.cells[b], b)).join("")}${pc(p.total, "")}</tr>`;
+         html += `<tr class="lane1"><td class="name" title="${esc(p.name)}">${esc(p.name)}</td>${row(p.cells, p.total, pc)}</tr>`;
        }
        return html;
      }).join("")
        || `<tr><td colspan="${2 + buckets.length}" style="text-align:center;padding:24px;color:#94a3b8">Filters Not Applied/Data unavailable</td></tr>`}</tbody>
-     <tfoot><tr><td>TOTAL${q ? "" : " = Total Revenue"}</td>${buckets.map((b) => cell(totals.cells[b], "", b)).join("")}${cell(totals.total, "", "")}</tr></tfoot>`;
+     <tfoot><tr><td>TOTAL${q ? "" : " = Total Revenue"}</td>${row(totals.cells, totals.total, (v, b) => cell(v, "", b))}</tr></tfoot>`;
   $("detailMore").classList.add("hidden");
   if (!isAgent) { const ls = main.map((r) => r.name); $("basketToggle").textContent = ls.length && ls.every((n) => state.lanesOpen.has(n)) ? "Collapse all" : "Expand all"; }
 }

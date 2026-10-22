@@ -685,7 +685,7 @@
   </div>
   <div id="generalCharts">   <!-- Agent Detail / Trade Lane Detail chart view (not shown for Billing Details) -->
   <div class="row" id="laneMixRow">
-    <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">All lanes (origin → destination country), excludes sundry and no-BL entries</p><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
+    <section class="card panel"><h2>Revenue by Trade Lane</h2><p class="sub">Top 5 lanes by net revenue (origin → destination country), excludes sundry and no-BL entries</p><div class="chart" id="laneChartBox"><canvas id="laneChart"></canvas></div></section>
     <section class="card panel" id="mixCard"><h2>Revenue Mix</h2><p class="sub">Net revenue by charge category</p><div class="chart" style="height:280px"><canvas id="mixChart"></canvas></div><div class="legend" id="mixLegend"></div></section>
   </div>
   <div class="row rev" id="agentTrendRow">
@@ -1462,7 +1462,7 @@ function render() {
   $("tableView").classList.toggle("hidden", chart);
   for (const b of $("viewToggle").children) b.setAttribute("aria-pressed", b.dataset.mode === state.mode);
   $("viewSub").textContent = chart
-    ? "Trade lanes, revenue mix, top agents and trend for the selected period — click any bar or point for the invoices."
+    ? "Charts for the selected period — click any bar or point for the invoices."
     : "Billing details, agent and trade lane tables for the selected period — click any number for the invoices.";
   $("basketCharts").classList.toggle("hidden", !chart || state.detail !== "billing");
   if (chart && state.detail === "billing") renderBasketCharts(lines);
@@ -1484,9 +1484,10 @@ function render() {
       }
     }
     if (!agentOnly) {
-      const lanes = topBy(lines, laneOf, Infinity);
-      $("laneChartBox").style.height = `${Math.max(340, lanes.length * 24 + 40)}px`;   // room for every lane
+      const lanes = topBy(lines, laneOf, 5);   // top 5 lanes by revenue
+      $("laneChartBox").style.height = "340px";
       renderBar("laneChart", lanes, (name) => openDrill({ title: `Trade Lane: ${name}`, lane: name }), 44);
+      const c = charts.laneChart; c.data.datasets[0].maxBarThickness = 40; c.options.scales.y.ticks.font.size = 13; c.update();
     }
     if (!agentOnly && !laneOnly) { renderMix(k.byCat); renderTrend(lines); }
   } else {
